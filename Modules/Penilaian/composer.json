@@ -1,0 +1,33 @@
+{
+    "name": "nwidart/penilaian",
+    "description": "",
+    "authors": [
+        {
+            "name": "Nicolas Widart",
+            "email": "n.widart@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\Penilaian\\": "app/",
+            "Modules\\Penilaian\\Database\\Factories\\": "database/factories/",
+            "Modules\\Penilaian\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\Penilaian\\Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "laravel/pint": "^1.27"
+    }
+}

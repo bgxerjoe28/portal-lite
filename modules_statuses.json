@@ -1,0 +1,9 @@
+{
+    "Akademik": true,
+    "Cbt": true,
+    "Penugasan": true,
+    "Penilaian": false,
+    "Kesiswaan": false,
+    "DaftarUlang": false,
+    "Surat": false
+}

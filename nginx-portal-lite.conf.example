@@ -1,0 +1,31 @@
+server {
+    listen 8082;
+    # Atau gunakan domain khusus, contoh:
+    # server_name cbt.example.com;
+
+    root /var/www/html/portal-lite/public;
+    index index.php;
+
+    access_log /var/log/nginx/portal-lite.access.log;
+    error_log  /var/log/nginx/portal-lite.error.log;
+
+    client_max_body_size 50M;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        
+        fastcgi_param HTTPS on;
+        fastcgi_param HTTP_X_FORWARDED_PROTO https;
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+}

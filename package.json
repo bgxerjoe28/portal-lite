@@ -1,0 +1,55 @@
+{
+    "$schema": "https://www.schemastore.org/package.json",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.0.0",
+        "axios": "^1.11.0",
+        "concurrently": "^9.0.1",
+        "laravel-vite-plugin": "^2.0.0",
+        "tailwindcss": "^4.0.0",
+        "vite": "^7.0.7"
+    },
+    "dependencies": {
+        "@fullcalendar/daygrid": "^6.1.20",
+        "@fullcalendar/interaction": "^6.1.20",
+        "@fullcalendar/vue3": "^6.1.20",
+        "@heroicons/vue": "^2.2.0",
+        "@inertiajs/vue3": "^2.2.18",
+        "@primeuix/themes": "^3.0.0",
+        "@tiptap/extension-color": "^3.28.0",
+        "@tiptap/extension-image": "^3.28.0",
+        "@tiptap/extension-link": "^3.28.0",
+        "@tiptap/extension-placeholder": "^3.28.0",
+        "@tiptap/extension-text-align": "^3.28.0",
+        "@tiptap/extension-text-style": "^3.28.0",
+        "@tiptap/extension-underline": "^3.28.0",
+        "@tiptap/pm": "^3.28.0",
+        "@tiptap/starter-kit": "^3.28.0",
+        "@tiptap/vue-3": "^3.28.0",
+        "@vitejs/plugin-vue": "^6.0.2",
+        "browser-image-compression": "^2.0.2",
+        "chart.js": "^4.5.1",
+        "dayjs": "^1.11.19",
+        "floating-vue": "^5.2.2",
+        "leaflet": "^1.9.4",
+        "lodash": "^4.17.21",
+        "moment": "^2.30.1",
+        "primeflex": "^4.0.0",
+        "primeicons": "^7.0.0",
+        "primevue": "^4.5.4",
+        "vue": "^3.5.24",
+        "ziggy-js": "^2.6.0"
+    },
+    "allowScripts": {
+        "esbuild@0.28.1": true
+    },
+    "overrides": {
+        "shell-quote": "^1.8.4",
+        "esbuild": "^0.28.1"
+    }
+}

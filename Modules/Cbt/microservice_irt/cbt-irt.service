@@ -1,0 +1,74 @@
+# ============================================================
+# CBT IRT Analytics Microservice — systemd Unit File
+# ============================================================
+#
+# CARA INSTALL DI SERVER PRODUCTION:
+#
+#   1. Copy file ini ke server:
+#      sudo cp cbt-irt.service /etc/systemd/system/cbt-irt.service
+#
+#   2. Buat file environment di /etc/portal/cbt-irt.env
+#      (lihat contoh di bawah)
+#
+#   3. Aktifkan dan jalankan:
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable cbt-irt
+#      sudo systemctl start cbt-irt
+#
+#   4. Cek status:
+#      sudo systemctl status cbt-irt
+#      curl http://127.0.0.1:8085/api/v1/health
+#
+# ────────────────────────────────────────────────────────────
+# CONTOH ISI /etc/portal/cbt-irt.env  (JANGAN commit file ini!)
+#
+#   CBT_INTERNAL_SECRET=isi_dengan_random_string_min_32_karakter
+#   MINIO_ENDPOINT=http://127.0.0.1:9000
+#   MINIO_ACCESS_KEY=minioadmin
+#   MINIO_SECRET_KEY=minioadmin
+#   MINIO_BUCKET=cbt-analytics
+#   MINIO_REGION=us-east-1
+#
+# ============================================================
+
+[Unit]
+Description=CBT IRT Analytics Microservice (FastAPI / Uvicorn)
+Documentation=https://github.com/bgxerjoe28/portal-lite
+After=network.target
+# Pastikan MinIO sudah berjalan sebelum service ini start (jika MinIO juga dikelola systemd)
+# After=minio.service
+
+[Service]
+Type=exec
+User=portal-lite
+Group=portal-lite
+
+# Direktori kerja — sesuaikan dengan APP_PATH
+WorkingDirectory=/var/www/html/portal-lite/Modules/Cbt/microservice_irt
+
+# File environment — JANGAN taruh secret di sini, gunakan EnvironmentFile
+EnvironmentFile=/etc/portal/cbt-irt.env
+
+# Eksekusi uvicorn dari virtualenv yang dibuat oleh deploy script
+ExecStart=/var/www/html/portal-lite/Modules/Cbt/microservice_irt/.venv/bin/uvicorn \
+    main:app \
+    --host 0.0.0.0 \
+    --port 8085 \
+    --workers 2 \
+    --loop asyncio
+
+# Restart otomatis jika crash (tunggu 5 detik)
+Restart=on-failure
+RestartSec=5s
+
+# Batas resource (opsional, sesuaikan dengan kapasitas server)
+# MemoryMax=512M
+# CPUQuota=80%
+
+# Logging via journald (gunakan: journalctl -u cbt-irt -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cbt-irt
+
+[Install]
+WantedBy=multi-user.target

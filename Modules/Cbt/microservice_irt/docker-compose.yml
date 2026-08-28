@@ -1,0 +1,36 @@
+# ============================================================
+# docker-compose.yml — REFERENSI SAJA (tidak digunakan di production)
+#
+# Production menjalankan microservice sebagai systemd service native,
+# BUKAN via Docker. File ini hanya disimpan sebagai referensi jika
+# suatu saat ingin containerize microservice ini secara terpisah.
+#
+# Untuk menjalankan di production: gunakan cbt-irt.service (systemd).
+# ============================================================
+version: '3.8'
+
+services:
+  cbt-irt-microservice:
+    build: .
+    container_name: cbt_irt_microservice
+    restart: always
+    ports:
+      - "8085:8085"
+    environment:
+      # WAJIB diisi dengan nilai nyata — jangan gunakan nilai default!
+      - CBT_INTERNAL_SECRET=${CBT_INTERNAL_SECRET}
+      # MinIO di host yang sama — gunakan host.docker.internal jika Docker
+      - MINIO_ENDPOINT=http://host.docker.internal:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET=${MINIO_BUCKET:-cbt-analytics}
+      - MINIO_REGION=us-east-1
+    extra_hosts:
+      # Izinkan container akses MinIO di host machine
+      - "host.docker.internal:host-gateway"
+    networks:
+      - cbt-network
+
+networks:
+  cbt-network:
+    external: true
