@@ -19,11 +19,8 @@ class RolePermissionSeeder extends Seeder
             'manage-users',
             'manage-students',
             'manage-grades',
-            // Modul Surat
             'access-penugasan',
             'manage-penugasan',
-            'access-surat',
-            'manage-surat',
         ];
 
         foreach ($permissions as $permission) {
