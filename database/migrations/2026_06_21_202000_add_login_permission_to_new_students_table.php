@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('new_students', function (Blueprint $table) {
-            $table->boolean('is_allowed_login')->default(false);
-            $table->foreignId('allowed_by_user_id')->nullable()->constrained('users')->onDelete('set null');
-        });
+        if (Schema::hasTable('new_students')) {
+            Schema::table('new_students', function (Blueprint $table) {
+                $table->boolean('is_allowed_login')->default(false);
+                $table->foreignId('allowed_by_user_id')->nullable()->constrained('users')->onDelete('set null');
+            });
+        }
     }
 
     /**
@@ -22,9 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('new_students', function (Blueprint $table) {
-            $table->dropForeign(['allowed_by_user_id']);
-            $table->dropColumn(['is_allowed_login', 'allowed_by_user_id']);
-        });
+        if (Schema::hasTable('new_students')) {
+            Schema::table('new_students', function (Blueprint $table) {
+                $table->dropForeign(['allowed_by_user_id']);
+                $table->dropColumn(['is_allowed_login', 'allowed_by_user_id']);
+            });
+        }
     }
 };

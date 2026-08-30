@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('new_students', function (Blueprint $table) {
-            $table->float('height')->nullable()->change();
-            $table->float('weight')->nullable()->change();
-        });
+        if (Schema::hasTable('new_students')) {
+            Schema::table('new_students', function (Blueprint $table) {
+                $table->float('height')->nullable()->change();
+                $table->float('weight')->nullable()->change();
+            });
+        }
     }
 
     /**
@@ -22,9 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('new_students', function (Blueprint $table) {
-            $table->integer('height')->nullable()->change();
-            $table->integer('weight')->nullable()->change();
-        });
+        if (Schema::hasTable('new_students')) {
+            Schema::table('new_students', function (Blueprint $table) {
+                $table->integer('height')->nullable()->change();
+                $table->integer('weight')->nullable()->change();
+            });
+        }
     }
 };

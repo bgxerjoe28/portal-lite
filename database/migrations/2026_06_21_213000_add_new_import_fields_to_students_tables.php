@@ -11,13 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('new_students', function (Blueprint $table) {
-            $table->string('jenis_kejuaraan')->nullable()->after('prev_school_name');
-            $table->string('nilai')->nullable()->after('phone');
-            $table->string('jarak')->nullable()->after('nilai');
-            $table->string('umur')->nullable()->after('jarak');
-            $table->string('nilai_akhir')->nullable()->after('umur');
-        });
+        if (Schema::hasTable('new_students')) {
+            Schema::table('new_students', function (Blueprint $table) {
+                $table->string('jenis_kejuaraan')->nullable()->after('prev_school_name');
+                $table->string('nilai')->nullable()->after('phone');
+                $table->string('jarak')->nullable()->after('nilai');
+                $table->string('umur')->nullable()->after('jarak');
+                $table->string('nilai_akhir')->nullable()->after('umur');
+            });
+        }
 
         Schema::table('students', function (Blueprint $table) {
             $table->string('jenis_kejuaraan')->nullable()->after('prev_school_name');
@@ -33,9 +35,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('new_students', function (Blueprint $table) {
-            $table->dropColumn(['jenis_kejuaraan', 'nilai', 'jarak', 'umur', 'nilai_akhir']);
-        });
+        if (Schema::hasTable('new_students')) {
+            Schema::table('new_students', function (Blueprint $table) {
+                $table->dropColumn(['jenis_kejuaraan', 'nilai', 'jarak', 'umur', 'nilai_akhir']);
+            });
+        }
 
         Schema::table('students', function (Blueprint $table) {
             $table->dropColumn(['jenis_kejuaraan', 'nilai', 'jarak', 'umur', 'nilai_akhir']);

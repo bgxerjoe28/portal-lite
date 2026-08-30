@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('bk_service_records', function (Blueprint $table) {
-            $table->string('latitude')->nullable()->after('place');
-            $table->string('longitude')->nullable()->after('latitude');
-        });
+        if (Schema::hasTable('bk_service_records')) {
+            Schema::table('bk_service_records', function (Blueprint $table) {
+                $table->string('latitude')->nullable()->after('place');
+                $table->string('longitude')->nullable()->after('latitude');
+            });
+        }
     }
 
     /**
@@ -22,8 +24,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('bk_service_records', function (Blueprint $table) {
-            $table->dropColumn(['latitude', 'longitude']);
-        });
+        if (Schema::hasTable('bk_service_records')) {
+            Schema::table('bk_service_records', function (Blueprint $table) {
+                $table->dropColumn(['latitude', 'longitude']);
+            });
+        }
     }
 };

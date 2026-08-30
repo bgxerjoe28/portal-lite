@@ -11,11 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('new_students', function (Blueprint $table) {
-            $table->string('prev_school_type')->nullable();
-            $table->string('prev_school_status')->nullable();
-            $table->string('prev_school_name')->nullable();
-        });
+        if (Schema::hasTable('new_students')) {
+            Schema::table('new_students', function (Blueprint $table) {
+                $table->string('prev_school_type')->nullable();
+                $table->string('prev_school_status')->nullable();
+                $table->string('prev_school_name')->nullable();
+            });
+        }
     }
 
     /**
@@ -23,8 +25,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('new_students', function (Blueprint $table) {
-            $table->dropColumn(['prev_school_type', 'prev_school_status', 'prev_school_name']);
-        });
+        if (Schema::hasTable('new_students')) {
+            Schema::table('new_students', function (Blueprint $table) {
+                $table->dropColumn(['prev_school_type', 'prev_school_status', 'prev_school_name']);
+            });
+        }
     }
 };

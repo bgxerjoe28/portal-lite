@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('counseling_services', function (Blueprint $table) {
-            $table->softDeletes();
-        });
+        if (Schema::hasTable('counseling_services')) {
+            Schema::table('counseling_services', function (Blueprint $table) {
+                $table->softDeletes();
+            });
+        }
     }
 
     /**
@@ -21,8 +23,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('counseling_services', function (Blueprint $table) {
-            $table->dropSoftDeletes();
-        });
+        if (Schema::hasTable('counseling_services')) {
+            Schema::table('counseling_services', function (Blueprint $table) {
+                $table->dropSoftDeletes();
+            });
+        }
     }
 };
