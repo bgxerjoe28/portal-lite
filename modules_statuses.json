@@ -2,7 +2,7 @@
     "Akademik": true,
     "Cbt": true,
     "Penugasan": true,
-    "Penilaian": false,
+    "Penilaian": true,
     "Kesiswaan": false,
     "DaftarUlang": false,
     "Surat": false

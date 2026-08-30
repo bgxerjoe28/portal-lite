@@ -22,11 +22,19 @@ return new class extends Migration
             $table->foreignId('teacher_id')->constrained('users')->cascadeOnDelete();
             $table->foreignId('classroom_id')->constrained('classrooms')->cascadeOnDelete();
             $table->foreignId('subject_id')->constrained('subjects')->cascadeOnDelete();
-            $table->foreignId('grading_component_id')->nullable()->constrained('grading_components')->nullOnDelete();
+            if (Schema::hasTable('grading_components')) {
+                $table->foreignId('grading_component_id')->nullable()->constrained('grading_components')->nullOnDelete();
+            } else {
+                $table->unsignedBigInteger('grading_component_id')->nullable();
+            }
             $table->dateTime('start_at');
             $table->dateTime('due_at');
             $table->boolean('is_published')->default(false);
-            $table->foreignId('grading_item_id')->nullable()->constrained('grading_items')->nullOnDelete();
+            if (Schema::hasTable('grading_items')) {
+                $table->foreignId('grading_item_id')->nullable()->constrained('grading_items')->nullOnDelete();
+            } else {
+                $table->unsignedBigInteger('grading_item_id')->nullable();
+            }
             $table->timestamps();
             $table->softDeletes();
         });
