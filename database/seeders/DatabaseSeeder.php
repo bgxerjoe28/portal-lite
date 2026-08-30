@@ -14,7 +14,6 @@ use Modules\Akademik\Models\Student;
 use Modules\Akademik\Models\Teacher;
 use Modules\Akademik\Models\SubjectGroup;
 use Spatie\Permission\Models\Role; // Model Pivot
-use Modules\Kesiswaan\Database\Seeders\KesiswaanDatabaseSeeder;
 
 // PENTING: Kita meload Model dari Namespace Modul Akademik
 // Pastikan nanti file Model-nya sudah dibuat di Modules/Akademik/app/Models/
@@ -23,6 +22,24 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement("
+                DO \$\$
+                DECLARE seq RECORD;
+                BEGIN
+                    FOR seq IN 
+                        SELECT table_name, column_name, pg_get_serial_sequence(table_name, column_name) as seq_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public' AND column_default LIKE 'nextval%'
+                    LOOP
+                        IF seq.seq_name IS NOT NULL THEN
+                            EXECUTE format('SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I), 1))', seq.seq_name, seq.column_name, seq.table_name);
+                        END IF;
+                    END LOOP;
+                END \$\$;
+            ");
+        }
+
         DB::transaction(function () {
 
             // =============================
@@ -47,32 +64,35 @@ class DatabaseSeeder extends Seeder
             $guruRole  = Role::firstOrCreate(['name' => 'guru']);
             $siswaRole = Role::firstOrCreate(['name' => 'siswa']);
 
+            $findOrCreateUser = function ($email, $attributes, $role) {
+                $user = User::withTrashed()->where('email', $email)->first();
+                if (!$user) {
+                    $user = User::create(array_merge(['email' => $email], $attributes));
+                } elseif ($user->trashed()) {
+                    $user->restore();
+                }
+                $user->assignRole($role);
+                return $user;
+            };
+
             // =============================
             // ADMIN
             // =============================
-            $admin = User::firstOrCreate(
-                ['email' => 'admin@sekolah.id'],
-                [
-                    'name' => 'Super Admin',
-                    'password' => Hash::make('password'),
-                    'email_verified_at' => now(),
-                ]
-            );
-            $admin->assignRole('admin');
+            $admin = $findOrCreateUser('admin@sekolah.id', [
+                'name' => 'Super Admin',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ], 'admin');
 
             // =============================
             // KEPALA SEKOLAH
             // =============================
             $kepsekRole = Role::firstOrCreate(['name' => 'kepala sekolah', 'guard_name' => 'web']);
-            $kepsek = User::firstOrCreate(
-                ['email' => 'kepsek@sekolah.id'],
-                [
-                    'name' => 'Bapak Kepala Sekolah',
-                    'password' => Hash::make('password'),
-                    'email_verified_at' => now(),
-                ]
-            );
-            $kepsek->assignRole('kepala sekolah');
+            $kepsek = $findOrCreateUser('kepsek@sekolah.id', [
+                'name' => 'Bapak Kepala Sekolah',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ], 'kepala sekolah');
 
             \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
             $this->call(MenusTableSeeder::class);
@@ -108,15 +128,11 @@ class DatabaseSeeder extends Seeder
             // =============================
             // GURU
             // =============================
-            $userGuru = User::firstOrCreate(
-                ['email' => 'budi@sekolah.id'],
-                [
-                    'name' => 'Budi Santoso',
-                    'password' => Hash::make('password'),
-                    'email_verified_at' => now(),
-                ]
-            );
-            $userGuru->assignRole('guru');
+            $userGuru = $findOrCreateUser('budi@sekolah.id', [
+                'name' => 'Budi Santoso',
+                'password' => Hash::make('password'),
+                'email_verified_at' => now(),
+            ], 'guru');
 
             $teacher = Teacher::firstOrCreate([
                 'user_id' => $userGuru->id,
@@ -145,15 +161,11 @@ class DatabaseSeeder extends Seeder
             // =============================
             for ($i = 1; $i <= 5; $i++) {
 
-                $userSiswa = User::firstOrCreate(
-                    ['email' => "siswa$i@sekolah.id"],
-                    [
-                        'name' => "Siswa $i",
-                        'password' => Hash::make('password'),
-                        'email_verified_at' => now(),
-                    ]
-                );
-                $userSiswa->assignRole('siswa');
+                $userSiswa = $findOrCreateUser("siswa$i@sekolah.id", [
+                    'name' => "Siswa $i",
+                    'password' => Hash::make('password'),
+                    'email_verified_at' => now(),
+                ], 'siswa');
                 $islamId = Religion::where('name', 'Islam')->value('id');
 
                 $siswa = Student::firstOrCreate([
@@ -179,23 +191,26 @@ class DatabaseSeeder extends Seeder
                 ]);
             }
 
-            // Seed a test candidate student for Daftar Ulang module
-            \Modules\DaftarUlang\Models\NewStudent::firstOrCreate([
-                'no_pendaftaran' => 'PPDB2026001',
-            ], [
-                'academic_year_id' => $year->id,
-                'ranking' => 1,
-                'login_code' => 'DU2026',
-                'status' => 'imported',
-                'full_name' => 'BUDI UTOMO',
-                'gender' => true,
-                'nisn' => null,
-            ]);
+            // Seed a test candidate student for Daftar Ulang module (if module exists)
+            if (class_exists('\Modules\DaftarUlang\Models\NewStudent') && \Illuminate\Support\Facades\Schema::hasTable('new_students')) {
+                \Modules\DaftarUlang\Models\NewStudent::firstOrCreate([
+                    'no_pendaftaran' => 'PPDB2026001',
+                ], [
+                    'academic_year_id' => $year->id,
+                    'ranking' => 1,
+                    'login_code' => 'DU2026',
+                    'status' => 'imported',
+                    'full_name' => 'BUDI UTOMO',
+                    'gender' => true,
+                    'nisn' => null,
+                ]);
+            }
         });
 
-        // Seed data master Modul Kesiswaan
-        // (dijalankan di luar transaksi agar seeder individual bisa pakai transaksi sendiri)
-        $this->call(KesiswaanDatabaseSeeder::class);
+        // Seed data master Modul Kesiswaan (if module exists)
+        if (class_exists('\Modules\Kesiswaan\Database\Seeders\KesiswaanDatabaseSeeder')) {
+            $this->call(\Modules\Kesiswaan\Database\Seeders\KesiswaanDatabaseSeeder::class);
+        }
     }
 
 }
