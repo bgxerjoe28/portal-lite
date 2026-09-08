@@ -613,8 +613,8 @@ class WordQuestionParser
                 $questionType = 'isian_singkat';
             } elseif (str_contains($questionRawText, '[isian') && ! str_contains($questionRawText, '[isiansingkat')) {
                 $questionType = 'uraian';
-            } elseif (preg_match('/\[opsi\s+no=\d+\s+pg=[A-E]\]/i', $questionRawText)) {
-                // [opsi no=2001 pg=A] di dalam tabel soal (Soal Pilihan Ganda Berkolom / Majemuk)
+            } elseif (preg_match('/\[opsi\s+no=\d+\s+pg=[A-Z]\]/i', $questionRawText)) {
+                // [opsi no=2001 pg=A/B/S] di dalam tabel soal (Soal Radio Dinamis / Pilihan Berkolom)
                 $questionType = 'uraian';
             }
             // PRIORITAS 2: jika teks soal utama tidak punya shortcode inline, cek semua baris

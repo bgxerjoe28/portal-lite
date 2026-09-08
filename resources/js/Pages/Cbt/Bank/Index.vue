@@ -399,7 +399,7 @@ const handleKunciDrop = (event) => {
 };
 const clearKunci = () => { fileKunci.value = null; };
 
-const submitImport = async () => {
+const submitImport = async (force = false) => {
     importErrors.value = {};
 
     if (!fileSoal.value) {
@@ -416,6 +416,9 @@ const submitImport = async () => {
     formData.append('file_soal', fileSoal.value);
     formData.append('file_kunci', fileKunci.value);
     formData.append('_method', 'POST');
+    if (force) {
+        formData.append('force_import', '1');
+    }
 
     try {
         await axios.post(route('cbt.bank.import', selectedBankId.value), formData, {
@@ -429,7 +432,23 @@ const submitImport = async () => {
 
     } catch (error) {
         const resp = error.response;
-        if (resp?.status === 422 && resp?.data?.errors) {
+        // 409: Bank sedang dipakai ujian aktif — minta konfirmasi
+        if (resp?.status === 409) {
+            const examList = Array.isArray(resp.data?.active_exams)
+                ? resp.data.active_exams.join(', ')
+                : 'ujian aktif';
+            confirm.require({
+                message: `<b>Peringatan!</b> Bank soal ini sedang digunakan oleh ujian yang sedang berlangsung:<br><br><b>${examList}</b><br><br>Import soal baru akan <b>menghapus semua soal lama</b> dan bisa merusak sesi siswa yang sedang mengerjakan ujian tersebut.<br><br>Apakah Anda tetap ingin melanjutkan?`,
+                header: '⚠️ Ujian Sedang Berlangsung',
+                icon: 'pi pi-exclamation-triangle',
+                acceptClass: 'p-button-danger',
+                acceptLabel: 'Ya, Tetap Import',
+                rejectLabel: 'Batal',
+                accept: () => {
+                    submitImport(true);
+                }
+            });
+        } else if (resp?.status === 422 && resp?.data?.errors) {
             const errs = resp.data.errors;
             importErrors.value = {
                 file_soal: errs.file_soal?.[0] || null,

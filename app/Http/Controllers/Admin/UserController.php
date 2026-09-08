@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -113,6 +114,12 @@ class UserController extends Controller implements HasMiddleware
 
         $user->assignRole($request->role);
 
+        ActivityLogger::log(
+            'USER_CREATE',
+            "Admin membuat Pengguna baru: {$user->name} ({$user->email}, Role: {$request->role})",
+            $user
+        );
+
         return back()->with('success', "User {$user->name} berhasil ditambahkan.");
     }
 
@@ -127,9 +134,28 @@ class UserController extends Controller implements HasMiddleware
             'role' => 'required|exists:roles,name',
         ]);
 
-        $user->update($request->only('name', 'email'));
+        $old = [
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->getRoleNames()->first(),
+        ];
 
+        $user->update($request->only('name', 'email'));
         $user->syncRoles([$request->role]);
+
+        $new = [
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $request->role,
+        ];
+
+        ActivityLogger::log(
+            'USER_UPDATE',
+            "Admin memperbarui data Pengguna: {$user->name} ({$user->email})",
+            $user,
+            $old,
+            $new
+        );
 
         return back()->with('success', "User {$user->name} berhasil diperbarui.");
     }
@@ -139,14 +165,20 @@ class UserController extends Controller implements HasMiddleware
      */
     public function toggleStatus(User $user)
     {
-        // dd($user);
         if ($user->id === Auth::id()) {
             return back()->with('error', 'Anda tidak bisa menonaktifkan akun sendiri.');
         }
 
+        $newValue = !$user->is_active;
         $user->update([
-            'is_active' => ! $user->is_active,
+            'is_active' => $newValue,
         ]);
+
+        ActivityLogger::log(
+            'USER_TOGGLE_STATUS',
+            "Admin mengubah status akun {$user->name} menjadi " . ($newValue ? 'AKTIF' : 'NON-AKTIF'),
+            $user
+        );
 
         return back()->with('success', "Status {$user->name} berhasil diperbarui.");
     }
@@ -161,9 +193,14 @@ class UserController extends Controller implements HasMiddleware
             'ids.*' => 'exists:users,id',
         ]);
 
-        User::whereIn('id', $request->ids)
+        $count = User::whereIn('id', $request->ids)
             ->where('id', '!=', Auth::id())
             ->update(['is_active' => false]);
+
+        ActivityLogger::log(
+            'USER_BATCH_DISABLE',
+            "Admin menonaktifkan {$count} akun pengguna secara massal"
+        );
 
         return back()->with('success', 'User terpilih berhasil dinonaktifkan.');
     }
@@ -177,8 +214,14 @@ class UserController extends Controller implements HasMiddleware
             'ids' => 'required|array',
             'ids.*' => 'exists:users,id',
         ]);
-        User::whereIn('id', $request->ids)
+        
+        $count = User::whereIn('id', $request->ids)
             ->update(['is_active' => true]);
+
+        ActivityLogger::log(
+            'USER_BATCH_ENABLE',
+            "Admin mengaktifkan {$count} akun pengguna secara massal"
+        );
 
         return back()->with('success', 'User terpilih berhasil diaktifkan.');
     }
@@ -188,13 +231,11 @@ class UserController extends Controller implements HasMiddleware
      */
     public function resetPassword(User $user)
     {
-        // dd($request->password);
         if ($user->student()->exists()) {
             $password = 'Siswa123$';
         } elseif ($user->hasRole('kepala sekolah')) {
             $password = 'Kepsek16!@3';
         } else {
-            // Asumsi jika bukan siswa atau kepsek, maka guru/staf/admin
             $password = 'Guru16!@34';
         }
 
@@ -202,6 +243,12 @@ class UserController extends Controller implements HasMiddleware
             'password' => Hash::make($password),
             'password_must_change' => true,
         ]);
+
+        ActivityLogger::log(
+            'USER_RESET_PASSWORD',
+            "Admin mereset password akun pengguna: {$user->name} ({$user->email})",
+            $user
+        );
 
         return back()
             ->with('success', "Password {$user->name} berhasil direset. Password baru: {$password}");

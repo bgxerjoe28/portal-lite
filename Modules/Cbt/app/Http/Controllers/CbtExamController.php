@@ -5,6 +5,7 @@ namespace Modules\Cbt\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Modules\Cbt\Models\CbtExam;
 use Modules\Cbt\Models\CbtBank;
@@ -33,10 +34,11 @@ class CbtExamController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
+        $isCbtManager = $user->hasRole('admin') || $user->can('manage-cbt');
 
         // Base query untuk count & filtering
         $baseQuery = CbtExam::query();
-        if (!$user->hasRole('admin') && $user->hasRole('guru')) {
+        if (!$isCbtManager && $user->hasRole('guru')) {
             $teacherId = $user->teacher?->id;
             $baseQuery->where('teacher_id', $teacherId);
         }
@@ -47,8 +49,8 @@ class CbtExamController extends Controller
 
         $query = CbtExam::with(['bank.subject', 'teacher', 'classrooms']);
 
-        // Jika bukan admin, hanya bisa melihat sesi miliknya sendiri
-        if (!$user->hasRole('admin') && $user->hasRole('guru')) {
+        // Jika bukan admin / pengelola CBT, hanya bisa melihat sesi miliknya sendiri
+        if (!$isCbtManager && $user->hasRole('guru')) {
             $teacherId = $user->teacher?->id;
             $query->where('teacher_id', $teacherId);
         }
@@ -68,9 +70,9 @@ class CbtExamController extends Controller
 
         $exams = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
 
-        // Ambil bank soal untuk dropdown form
-        $bankQuery = CbtBank::query();
-        if (!$user->hasRole('admin') && $user->hasRole('guru')) {
+        // Ambil bank soal untuk dropdown form (eager-load mapel dan guru)
+        $bankQuery = CbtBank::with(['subject', 'teacher']);
+        if (!$isCbtManager && $user->hasRole('guru')) {
             $bankQuery->where('teacher_id', $user->teacher?->id);
         }
         $banks = $bankQuery->orderBy('name')->get();
@@ -80,7 +82,13 @@ class CbtExamController extends Controller
         
         $activeYear = \Modules\Akademik\Models\AcademicYear::where('is_active', true)->first();
 
-        if (!$user->hasRole('admin') && $user->hasRole('guru')) {
+        // Ambil semua rombel aktif di tahun ajaran berjalan (misal 18 rombel: X 1 - XII 6)
+        $allActiveClasses = Classroom::when($activeYear, fn($q) => $q->where('academic_year_id', $activeYear->id))
+            ->orderBy('level')
+            ->orderBy('name')
+            ->get();
+
+        if (!$isCbtManager && $user->hasRole('guru')) {
             $schedules = \Modules\Akademik\Models\Schedule::with(['subject', 'religion', 'classroom'])
                 ->where('teacher_id', $user->teacher?->id)
                 ->when($activeYear, fn($q) => $q->where('academic_year_id', $activeYear->id))
@@ -132,21 +140,28 @@ class CbtExamController extends Controller
                 });
             $gradingComponents = $gradingComponentsQuery->get();
         } else {
-            $classrooms = Classroom::orderBy('level')->orderBy('name')->get();
+            $classrooms = $allActiveClasses;
             $subjects = \Modules\Akademik\Models\Subject::orderBy('name')->get();
             $gradingComponents = \Modules\Penilaian\Models\GradingComponent::with('subject')
                 ->where('academic_year_id', $activeYear?->id)->get();
         }
         
         $teachers = \Modules\Akademik\Models\Teacher::orderBy('full_name')->get();
+        $sessions = \Modules\Cbt\Models\CbtSession::whereNotNull('start_time')
+            ->whereNotNull('end_time')
+            ->orderBy('start_time')
+            ->get(['id', 'name', 'start_time', 'end_time']);
 
         return Inertia::render('Cbt/Exam/Index', [
             'exams' => $exams,
             'banks' => $banks,
             'classrooms' => $classrooms,
+            'allClassrooms' => $allActiveClasses,
+            'isCbtManager' => $isCbtManager,
             'subjects' => $subjects,
             'gradingComponents' => $gradingComponents,
             'teachers' => $teachers,
+            'sessions' => $sessions,
             'filters' => $request->only(['search', 'status']),
             'counts' => [
                 'all' => $allCount,
@@ -257,7 +272,85 @@ class CbtExamController extends Controller
             self::syncExamGradesToPenilaian($exam);
         }
 
+        ActivityLogger::log(
+            'CBT_EXAM_CREATE',
+            "Membuat Jadwal Ujian CBT baru: {$exam->title} (Durasi: {$exam->duration} menit, Mulai: {$exam->start_time})",
+            $exam,
+            null,
+            $exam->toArray()
+        );
+
         return redirect()->back()->with('success', 'Jadwal Ujian berhasil dibuat.');
+    }
+
+    /**
+     * Menyimpan banyak jadwal ujian terpusat (PTS/PAS/SAS) sekaligus dalam 1 transaksi.
+     */
+    public function batchStore(Request $request)
+    {
+        $request->validate([
+            'exams' => 'required|array|min:1',
+            'exams.*.cbt_bank_id' => 'required|exists:cbt_banks,id',
+            'exams.*.title' => 'required|string|max:255',
+            'exams.*.duration' => 'required|integer|min:1',
+            'exams.*.start_time' => 'required|date',
+            'exams.*.end_time' => 'required|date|after:exams.*.start_time',
+            'exams.*.classroom_ids' => 'required|array|min:1',
+            'exams.*.classroom_ids.*' => 'exists:classrooms,id',
+            'exams.*.shuffle_questions' => 'required|boolean',
+            'exams.*.shuffle_options' => 'required|boolean',
+            'exams.*.must_complete_all' => 'required|boolean',
+            'exams.*.is_active' => 'required|boolean',
+            'exams.*.is_independent' => 'nullable|boolean',
+            'exams.*.grading_component_id' => 'nullable|exists:grading_components,id',
+        ]);
+
+        $user = Auth::user();
+        $teacherId = $user->teacher?->id;
+
+        if (!$teacherId && !$user->hasRole('admin') && !$user->can('manage-cbt')) {
+            return redirect()->back()->with('error', 'Akun Anda tidak memiliki hak akses penjadwalan CBT.');
+        }
+
+        if ($user->hasRole('admin') && !$teacherId) {
+            $teacherId = null;
+        }
+
+        $createdCount = 0;
+        DB::transaction(function () use ($request, $teacherId, &$createdCount) {
+            foreach ($request->exams as $item) {
+                $bank = CbtBank::find($item['cbt_bank_id']);
+                $itemTeacherId = $bank?->teacher_id ?? $teacherId;
+
+                $exam = CbtExam::create([
+                    'cbt_bank_id' => $item['cbt_bank_id'],
+                    'teacher_id' => $itemTeacherId,
+                    'title' => $item['title'],
+                    'duration' => $item['duration'],
+                    'start_time' => $item['start_time'],
+                    'end_time' => $item['end_time'],
+                    'shuffle_questions' => $item['shuffle_questions'],
+                    'shuffle_options' => $item['shuffle_options'],
+                    'must_complete_all' => $item['must_complete_all'],
+                    'is_independent' => $item['is_independent'] ?? false,
+                    'is_active' => $item['is_active'],
+                    'grading_component_id' => $item['grading_component_id'] ?? null,
+                ]);
+
+                $exam->classrooms()->sync($item['classroom_ids']);
+                $createdCount++;
+
+                ActivityLogger::log(
+                    'CBT_EXAM_CREATE',
+                    "Membuat Jadwal Ujian Terpusat (Batch): {$exam->title} (Durasi: {$exam->duration} menit, Mulai: {$exam->start_time})",
+                    $exam,
+                    null,
+                    $exam->toArray()
+                );
+            }
+        });
+
+        return redirect()->route('cbt.exams.index')->with('success', "Berhasil menjadwalkan {$createdCount} ujian terpusat sekaligus.");
     }
 
     public function update(Request $request, $id)
@@ -279,6 +372,7 @@ class CbtExamController extends Controller
         ]);
 
         $exam = CbtExam::with('classrooms')->findOrFail($id);
+        $old = $exam->toArray();
         
         if ($exam->is_independent) {
             $this->cleanupIndependentProctorSchedules($exam);
@@ -352,12 +446,149 @@ class CbtExamController extends Controller
             self::syncExamGradesToPenilaian($exam);
         }
 
+        ActivityLogger::log(
+            'CBT_EXAM_UPDATE',
+            "Memperbarui Jadwal Ujian CBT: {$exam->title} (Durasi: {$exam->duration} menit)",
+            $exam,
+            $old,
+            $exam->toArray()
+        );
+
         return redirect()->back()->with('success', 'Jadwal Ujian berhasil diperbarui.');
+    }
+
+    public function dryRun($id)
+    {
+        $user = Auth::user();
+        $exam = CbtExam::with(['bank.subject', 'bank.questions'])->findOrFail($id);
+
+        if (!$user->hasRole('admin') && $user->hasRole('guru')) {
+            $teacherId = $user->teacher?->id;
+            if ($exam->teacher_id && $exam->teacher_id != $teacherId) {
+                abort(404);
+            }
+        }
+
+        $bank = $exam->bank;
+        if (!$bank || $bank->questions->isEmpty()) {
+            return redirect()->route('cbt.exams.index')->with('error', 'Bank Soal untuk ujian ini belum memiliki butir soal.');
+        }
+
+        $sessionKey = 'cbt_dry_run_order_' . $id;
+
+        // Pertahankan urutan soal & opsi jika ini adalah partial reload (Muat Ulang Soal)
+        if (request()->header('X-Inertia-Partial-Data') && session()->has($sessionKey)) {
+            $cached = session()->get($sessionKey);
+            $questionIds = $cached['question_ids'] ?? [];
+            $optionsOrder = $cached['options_order'] ?? [];
+
+            // Sinkronkan jika ada soal yang dihapus dari bank soal saat simulasi
+            $existingIds = $bank->questions->pluck('id')->toArray();
+            $questionIds = array_values(array_intersect($questionIds, $existingIds));
+        } else {
+            $questionIds = $bank->questions->pluck('id')->toArray();
+
+            if ($exam->shuffle_questions) {
+                shuffle($questionIds);
+            }
+
+            $optionsOrder = [];
+            if ($exam->shuffle_options) {
+                foreach ($bank->questions as $q) {
+                    if (in_array($q->question_type, ['pilihan_ganda', 'list', 'checklist', 'skor_berbeda'])) {
+                        $keys = array_keys($q->options ?? []);
+                        shuffle($keys);
+                        $optionsOrder[$q->id] = $keys;
+                    }
+                }
+            }
+
+            // Simpan urutan acak simulasi ke session
+            session()->put($sessionKey, [
+                'question_ids' => $questionIds,
+                'options_order' => $optionsOrder,
+            ]);
+        }
+
+        $dbQuestions = $bank->questions->keyBy('id');
+
+        $questions = collect($questionIds)->map(function ($qId) use ($dbQuestions, $optionsOrder, $exam) {
+            $q = $dbQuestions->get($qId);
+            if (!$q) return null;
+
+            $options = $q->options;
+            $savedOptionOrder = $optionsOrder[$q->id] ?? null;
+
+            if ($exam->shuffle_options && $savedOptionOrder && in_array($q->question_type, ['pilihan_ganda', 'list', 'checklist', 'skor_berbeda'])) {
+                $shuffledOptions = [];
+                foreach ($savedOptionOrder as $key) {
+                    if (isset($options[$key])) {
+                        $shuffledOptions[$key] = $options[$key];
+                    }
+                }
+                $options = $shuffledOptions;
+            }
+
+            return [
+                'id' => $q->id,
+                'cbt_bank_id' => $q->cbt_bank_id,
+                'question_type' => $q->question_type,
+                'question_text' => $q->question_text,
+                'options' => $options,
+                'score' => (float)($q->score ?: 10),
+                'lock_n' => (bool)$q->lock_n,
+                'grouping' => $q->grouping,
+                'correct_answer' => $q->correct_answer,
+            ];
+        })->filter()->values();
+
+        $studentExam = [
+            'id' => 0,
+            'cbt_exam_id' => $exam->id,
+            'student_id' => 0,
+            'status' => 'started',
+            'started_at' => now()->toIso8601String(),
+            'warning_count' => 0,
+            'is_blocked' => false,
+            'student' => [
+                'id' => 0,
+                'full_name' => $user->name . ' (Simulasi Guru)',
+                'nisn' => 'SIMULASI-GURU',
+            ],
+        ];
+
+        $durationSeconds = ($exam->duration ?: 60) * 60;
+
+        return Inertia::render('Cbt/Student/ExamSession', [
+            'exam' => [
+                'id' => $exam->id,
+                'title' => $exam->title,
+                'duration' => $exam->duration ?: 60,
+                'shuffle_questions' => (bool)$exam->shuffle_questions,
+                'shuffle_options' => (bool)$exam->shuffle_options,
+                'must_complete_all' => (bool)$exam->must_complete_all,
+                'bank' => [
+                    'id' => $bank->id,
+                    'name' => $bank->name,
+                    'subject' => [
+                        'name' => $bank->subject?->name ?? 'Mata Pelajaran',
+                    ],
+                ],
+            ],
+            'studentExam' => $studentExam,
+            'questions' => $questions,
+            'initialAnswers' => (object)[],
+            'remainingSeconds' => $durationSeconds,
+            'suspensionRemainingSeconds' => 0,
+            'isDryRun' => true,
+        ]);
     }
 
     public function destroy($id)
     {
         $exam = CbtExam::with('classrooms')->findOrFail($id);
+        $examTitle = $exam->title;
+        $old = $exam->toArray();
 
         if ($exam->is_independent) {
             $this->cleanupIndependentProctorSchedules($exam);
@@ -365,6 +596,14 @@ class CbtExamController extends Controller
 
         $exam->classrooms()->detach();
         $exam->delete();
+
+        ActivityLogger::log(
+            'CBT_EXAM_DELETE',
+            "Menghapus Jadwal Ujian CBT: {$examTitle}",
+            $exam,
+            $old,
+            null
+        );
 
         return redirect()->back()->with('success', 'Jadwal Ujian berhasil dihapus.');
     }
@@ -423,6 +662,12 @@ class CbtExamController extends Controller
             }
         }
 
+        ActivityLogger::log(
+            'CBT_EXAM_TOGGLE_INDEPENDENT',
+            "Mengubah mode Ujian CBT: {$exam->title} menjadi " . ($newValue ? 'Ujian Mandiri' : 'Ujian Reguler Proktor'),
+            $exam
+        );
+
         $label = $newValue ? 'diaktifkan' : 'dinonaktifkan';
         return redirect()->back()->with('success', "Ujian Mandiri berhasil {$label}.");
     }
@@ -432,6 +677,12 @@ class CbtExamController extends Controller
         $exam = CbtExam::findOrFail($id);
         $newValue = !$exam->is_active;
         $exam->update(['is_active' => $newValue]);
+
+        ActivityLogger::log(
+            'CBT_EXAM_TOGGLE_ACTIVE',
+            "Mengubah status Ujian CBT: {$exam->title} menjadi " . ($newValue ? 'AKTIF' : 'NON-AKTIF'),
+            $exam
+        );
 
         $label = $newValue ? 'diaktifkan' : 'dinonaktifkan';
         return redirect()->back()->with('success', "Status Ujian \"{$exam->title}\" berhasil {$label}.");
@@ -1484,6 +1735,160 @@ class CbtExamController extends Controller
             'headmaster_name' => $headmasterName,
             'headmaster_nip' => $headmasterNip,
         ]);
+    }
+
+    /**
+     * Export / Cetak Berita Acara & Rekap Pelaksanaan Ujian CBT.
+     */
+    public function exportBeritaAcaraPdf(Request $request, $id)
+    {
+        $exam = CbtExam::with(['bank.subject', 'bank.questions', 'teacher.user', 'classrooms'])->findOrFail($id);
+        $this->checkExamOwnership($exam);
+
+        if ($request->has('notes') && $exam->notes !== $request->input('notes')) {
+            $exam->update(['notes' => $request->input('notes')]);
+        }
+
+        $notes = $request->input('notes', $exam->notes);
+        if (empty($notes)) {
+            $notes = 'Ujian Computer Based Test (CBT) telah dilaksanakan secara tertib, lancar, dan sesuai dengan petunjuk teknis pelaksanaan asesmen sekolah.';
+        }
+
+        $classroomIds = $exam->classrooms->pluck('id');
+
+        // Ambil semua siswa terdaftar di rombel kelas ujian ini
+        $students = \Modules\Akademik\Models\Student::whereHas('classrooms', function ($q) use ($classroomIds) {
+                $q->whereIn('classrooms.id', $classroomIds)
+                  ->where('classroom_students.status', 'aktif');
+            })
+            ->with(['classrooms' => function ($q) use ($classroomIds) {
+                $q->whereIn('classrooms.id', $classroomIds)
+                  ->where('classroom_students.status', 'aktif');
+            }])
+            ->orderBy('full_name')
+            ->get();
+
+        // Ambil data pengerjaan ujian siswa
+        $studentExams = CbtStudentExam::where('cbt_exam_id', $id)
+            ->with(['answers'])
+            ->get()
+            ->keyBy('student_id');
+
+        $presentStudents = [];
+        $absentStudents = [];
+        $allStudentRows = [];
+
+        foreach ($students as $idx => $student) {
+            $stExam = $studentExams->get($student->id);
+            $className = $student->classrooms->first()?->name ?? '-';
+            $isHadir = $stExam && in_array($stExam->status, ['started', 'submitted', 'completed']);
+
+            $row = [
+                'no' => $idx + 1,
+                'id' => $student->id,
+                'nis' => $student->nis ?? '-',
+                'nisn' => $student->nisn ?? '-',
+                'name' => $student->full_name,
+                'classroom' => $className,
+                'status' => $stExam ? $stExam->status : 'not_started',
+                'status_label' => $this->formatStudentExamStatusLabel($stExam),
+                'score' => ($stExam && !is_null($stExam->score)) ? $stExam->score : '-',
+                'started_at' => $stExam?->created_at ? $stExam->created_at->format('H:i') : '-',
+                'submitted_at' => $stExam?->submitted_at ? $stExam->submitted_at->format('H:i') : '-',
+                'is_present' => $isHadir,
+            ];
+
+            $allStudentRows[] = $row;
+
+            if ($isHadir) {
+                $presentStudents[] = $row;
+            } else {
+                $absentStudents[] = $row;
+            }
+        }
+
+        $totalStudents = count($students);
+        $presentCount = count($presentStudents);
+        $absentCount = count($absentStudents);
+        $presentPercentage = $totalStudents > 0 ? round(($presentCount / $totalStudents) * 100, 1) : 0;
+        $absentPercentage = $totalStudents > 0 ? round(($absentCount / $totalStudents) * 100, 1) : 0;
+
+        $classroomNamesArr = $exam->classrooms ? $exam->classrooms->pluck('name')->toArray() : [];
+        $classroomNamesStr = !empty($classroomNamesArr) ? implode(', ', $classroomNamesArr) : 'Semua Kelas';
+
+        $kop = [
+            'kop_pemprov' => \App\Models\Setting::get('kop_pemprov', 'PEMERINTAH PROVINSI JAWA TENGAH'),
+            'kop_dinas' => \App\Models\Setting::get('kop_dinas', 'DINAS PENDIDIKAN'),
+            'school_name' => \App\Models\Setting::get('school_name', config('app.name', 'SMA NEGERI 16 SEMARANG')),
+            'school_address' => \App\Models\Setting::get('school_address', 'Jl. Ngadirgo Tengah, Mijen'),
+            'school_city' => \App\Models\Setting::get('school_city', 'Kota Semarang'),
+            'school_province' => \App\Models\Setting::get('school_province', 'Jawa Tengah'),
+            'school_postal_code' => \App\Models\Setting::get('school_postal_code', ''),
+            'school_phone' => \App\Models\Setting::get('school_phone', ''),
+            'school_website' => \App\Models\Setting::get('school_website', ''),
+            'school_email' => \App\Models\Setting::get('school_email', ''),
+            'site_logo' => \App\Models\Setting::get('site_logo'),
+            'site_logo_pemda' => \App\Models\Setting::get('site_logo_pemda'),
+        ];
+
+        $schoolCity = \App\Models\Setting::get('school_city', 'Semarang');
+        $headmasterName = \App\Models\Setting::get('principal_name', 'Subchan, S. Pd.');
+        $headmasterNip = \App\Models\Setting::get('principal_nip', '19740201 200012 1 002');
+        $teacherName = $exam->teacher?->user?->name ?? ($exam->teacher?->full_name ?? '-');
+        $teacherNip = $exam->teacher?->nip ?? '-';
+
+        $examDate = $exam->start_time ? \Carbon\Carbon::parse($exam->start_time)->translatedFormat('l, d F Y') : now()->translatedFormat('l, d F Y');
+        $examTimeRange = ($exam->start_time ? \Carbon\Carbon::parse($exam->start_time)->format('H:i') : '07:30') . ' - ' . ($exam->end_time ? \Carbon\Carbon::parse($exam->end_time)->format('H:i') : 'Selesai') . ' WIB';
+
+        return view('cbt::pdf.report_berita_acara', [
+            'exam' => $exam,
+            'bank' => $exam->bank,
+            'kop' => $kop,
+            'notes' => $notes,
+            'total_students' => $totalStudents,
+            'present_count' => $presentCount,
+            'absent_count' => $absentCount,
+            'present_percentage' => $presentPercentage,
+            'absent_percentage' => $absentPercentage,
+            'present_students' => $presentStudents,
+            'absent_students' => $absentStudents,
+            'all_student_rows' => $allStudentRows,
+            'classroom_names' => $classroomNamesStr,
+            'exam_date' => $examDate,
+            'exam_time_range' => $examTimeRange,
+            'school_city' => $schoolCity,
+            'headmaster_name' => $headmasterName,
+            'headmaster_nip' => $headmasterNip,
+            'teacher_name' => $teacherName,
+            'teacher_nip' => $teacherNip,
+        ]);
+    }
+
+    public function updateNotes(Request $request, $id)
+    {
+        $exam = CbtExam::findOrFail($id);
+        $this->checkExamOwnership($exam);
+
+        $validated = $request->validate([
+            'notes' => 'nullable|string',
+        ]);
+
+        $exam->update([
+            'notes' => $validated['notes'] ?? null,
+        ]);
+
+        return redirect()->back()->with('success', 'Catatan penyelenggaraan ujian berhasil disimpan.');
+    }
+
+    protected function formatStudentExamStatusLabel($stExam): string
+    {
+        if (!$stExam) return 'Belum Mengerjakan';
+        if ($stExam->status === 'submitted' || $stExam->status === 'completed') return 'Hadir (Selesai)';
+        if ($stExam->status === 'started') return 'Hadir (Mengerjakan)';
+        if ($stExam->status === 'login') return 'Hadir (Login)';
+        if ($stExam->status === 'logged_out') return 'Dikeluarkan';
+        if ($stExam->status === 'blocked') return 'Diblokir';
+        return 'Belum Mulai';
     }
 
     /**

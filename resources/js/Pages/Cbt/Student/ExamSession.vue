@@ -81,6 +81,24 @@
     </div>
 
     <div class="min-h-screen flex flex-column bg-slate-900 text-slate-100 pb-8 select-none">
+        <!-- 0. DRY RUN / SIMULASI GURU BANNER -->
+        <div v-if="isDryRun" class="bg-amber-400 text-slate-950 px-4 py-2 flex flex-wrap justify-content-between align-items-center gap-2 font-bold shadow-4 sticky top-0" style="z-index: 1001;">
+            <div class="flex align-items-center gap-2 text-sm md:text-base">
+                <i class="pi pi-desktop text-xl text-slate-900"></i>
+                <span>MODE SIMULASI CBT (DRY RUN GURU) — Ujian riil berjalan tanpa menyimpan data ke database.</span>
+            </div>
+            <div class="flex align-items-center gap-2">
+                <Button 
+                    label="Keluar dari Simulasi" 
+                    icon="pi pi-sign-out" 
+                    severity="danger" 
+                    size="small" 
+                    class="font-bold py-1 px-3 text-xs"
+                    @click="exitDryRun" 
+                />
+            </div>
+        </div>
+
         <!-- HEADER -->
         <header class="border-bottom-1 border-slate-700 py-3 px-4 flex justify-content-between align-items-center sticky top-0 shadow-3" style="z-index: 1000; background-color: #1e293b !important;">
             <div class="flex flex-column gap-1">
@@ -91,8 +109,18 @@
                     <span class="font-bold" style="color: #34d399 !important;"><i class="pi pi-user mr-1 text-xs" style="color: #34d399 !important;"></i>{{ studentExam.student?.full_name || 'Peserta' }}</span>
                 </div>
             </div>
-            <!-- ACTIONS (PETA SOAL & TIMER) -->
+            <!-- ACTIONS (MUAT ULANG, PETA SOAL & TIMER) -->
             <div class="flex align-items-center gap-2 md:gap-3">
+                <Button 
+                    class="bg-slate-950 border-slate-700 hover:bg-slate-700 text-white font-semibold border-round-xl" 
+                    :loading="isReloadingQuestions"
+                    @click="reloadQuestions"
+                    style="color: #ffffff !important;"
+                    v-tooltip.bottom="'Muat Ulang Soal'"
+                >
+                    <i v-if="!isReloadingQuestions" class="pi pi-sync"></i>
+                    <span class="mobile-hide ml-1">Muat Ulang Soal</span>
+                </Button>
                 <Button 
                     class="bg-slate-950 border-slate-700 hover:bg-slate-700 text-white font-semibold border-round-xl" 
                     @click="displayMapModal = true"
@@ -546,6 +574,88 @@
                 />
             </div>
         </Dialog>
+
+        <!-- DRY RUN RESULT MODAL -->
+        <Dialog 
+            v-model:visible="displayDryRunResultModal" 
+            header="Hasil Simulasi Ujian CBT (Dry Run)" 
+            :modal="true" 
+            :closable="false"
+            :style="{ width: '700px', maxWidth: '95vw' }"
+            class="bg-slate-900 border border-slate-700 text-white"
+        >
+            <div class="p-2 flex flex-column gap-3">
+                <div class="p-3 bg-amber-500/10 border-round-xl border border-amber-500 text-amber-300 text-sm flex align-items-center gap-2">
+                    <i class="pi pi-info-circle text-lg"></i>
+                    <span>Ini adalah <strong>Hasil Simulasi / Dry Run</strong>. Tidak ada data jawaban atau skor yang disimpan ke database portal.</span>
+                </div>
+
+                <div class="grid p-fluid">
+                    <div class="col-12 md:col-6">
+                        <div class="p-4 bg-slate-950 border border-slate-800 border-round-2xl text-center flex flex-column align-items-center justify-content-center h-full">
+                            <span class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-1">Skor Simulasi Anda</span>
+                            <h1 class="text-5xl font-mono font-bold text-emerald-400 m-0">{{ dryRunResults.percentage }}</h1>
+                            <span class="text-xs text-slate-400 mt-1">Total Poin: {{ dryRunResults.totalPoints }} / {{ dryRunResults.maxPoints }}</span>
+                        </div>
+                    </div>
+                    <div class="col-12 md:col-6">
+                        <div class="p-3 bg-slate-950 border border-slate-800 border-round-2xl flex flex-column gap-2 text-sm">
+                            <div class="flex justify-content-between border-bottom-1 border-slate-800 pb-1">
+                                <span class="text-slate-400">Total Soal:</span>
+                                <strong class="text-white">{{ dryRunResults.totalQuestions }} Soal</strong>
+                            </div>
+                            <div class="flex justify-content-between border-bottom-1 border-slate-800 pb-1">
+                                <span class="text-slate-400">Soal Terjawab:</span>
+                                <strong class="text-blue-400">{{ dryRunResults.answeredCount }} Soal</strong>
+                            </div>
+                            <div class="flex justify-content-between border-bottom-1 border-slate-800 pb-1">
+                                <span class="text-slate-400">Benar:</span>
+                                <strong class="text-emerald-400">{{ dryRunResults.correctCount }} Soal</strong>
+                            </div>
+                            <div class="flex justify-content-between">
+                                <span class="text-slate-400">Salah / Uraian / Kosong:</span>
+                                <strong class="text-red-400">{{ dryRunResults.incorrectCount }} Soal</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rincian Soal -->
+                <div class="max-h-15rem overflow-y-auto surface-950 border-round-xl border border-slate-800 p-2">
+                    <table class="w-full text-xs text-left">
+                        <thead>
+                            <tr class="text-slate-400 border-bottom-1 border-slate-800">
+                                <th class="p-2">No</th>
+                                <th class="p-2">Tipe Soal</th>
+                                <th class="p-2">Status</th>
+                                <th class="p-2 text-right">Poin Diperoleh</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="item in dryRunResults.details" :key="item.number" class="border-bottom-1 border-slate-800/60">
+                                <td class="p-2 font-bold text-white">#{{ item.number }}</td>
+                                <td class="p-2 text-slate-300">{{ item.question_type }}</td>
+                                <td class="p-2">
+                                    <Tag 
+                                        :value="item.is_correct === true ? 'Benar' : (item.is_correct === false ? 'Salah' : 'Uraian (Perlu Periksa Manual)')"
+                                        :severity="item.is_correct === true ? 'success' : (item.is_correct === false ? 'danger' : 'info')"
+                                        class="text-xs"
+                                    />
+                                </td>
+                                <td class="p-2 text-right font-mono font-bold" :class="item.points_earned > 0 ? 'text-emerald-400' : 'text-slate-400'">
+                                    {{ item.points_earned }} / {{ item.max_score }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex justify-content-end gap-2 mt-2 pt-2 border-top-1 border-slate-800">
+                    <Button label="Tinjau Lembar Soal" severity="secondary" outlined size="small" @click="displayDryRunResultModal = false" />
+                    <Button label="Kembali ke Daftar Ujian" icon="pi pi-arrow-left" severity="primary" size="small" class="font-bold" @click="exitDryRun" />
+                </div>
+            </div>
+        </Dialog>
     </div>
 </template>
 
@@ -569,6 +679,10 @@ const props = defineProps({
     questions: Array,
     initialAnswers: Object,
     remainingSeconds: Number,
+    isDryRun: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const toast = useToast();
@@ -587,6 +701,140 @@ const matchingAnswers = ref({});
 const sortingItems = ref([]);
 
 const displaySubmitModal = ref(false);
+const displayDryRunResultModal = ref(false);
+const dryRunResults = ref({
+    totalQuestions: 0,
+    answeredCount: 0,
+    correctCount: 0,
+    incorrectCount: 0,
+    totalPoints: 0,
+    maxPoints: 0,
+    percentage: 0,
+    details: [],
+});
+
+const exitDryRun = () => {
+    router.visit('/cbt/exams');
+};
+
+const calculateDryRunScore = () => {
+    let totalMaxScore = 0;
+    let totalPointsEarned = 0;
+    let correctCount = 0;
+    let answered = 0;
+    const details = [];
+
+    props.questions.forEach((q, idx) => {
+        const maxScore = parseFloat(q.score) || 10;
+        totalMaxScore += maxScore;
+
+        const ans = answers.value[q.id];
+        const selected = ans ? ans.selected_answer : null;
+        const correct = q.correct_answer;
+        const type = q.question_type;
+
+        let isCorrect = false;
+        let pointsEarned = 0;
+
+        const hasSelected = selected !== null && selected !== undefined && selected !== '' && 
+            (!Array.isArray(selected) || selected.length > 0) &&
+            (typeof selected !== 'object' || Object.keys(selected).length > 0);
+
+        if (hasSelected) {
+            answered++;
+        }
+
+        if (hasSelected) {
+            if (type === 'pilihan_ganda' || type === 'survey' || type === 'skor_berbeda') {
+                const selStr = Array.isArray(selected) ? (selected[0] ?? '') : selected;
+                const corrStr = Array.isArray(correct) ? (correct[0] ?? '') : correct;
+                if (String(selStr).trim().toUpperCase() === String(corrStr).trim().toUpperCase()) {
+                    isCorrect = true;
+                    pointsEarned = maxScore;
+                }
+            } else if (type === 'isian_singkat') {
+                const selClean = String(Array.isArray(selected) ? selected.join(' ') : selected).trim().toLowerCase();
+                const corrList = Array.isArray(correct) ? correct : [correct];
+                const flatCorr = corrList.map(c => String(c).trim().toLowerCase());
+                if (flatCorr.includes(selClean)) {
+                    isCorrect = true;
+                    pointsEarned = maxScore;
+                }
+            } else if (type === 'checklist' || type === 'list') {
+                const selArr = Array.isArray(selected) ? selected.map(s => String(s).trim().toUpperCase()) : [String(selected).trim().toUpperCase()];
+                const corrArr = Array.isArray(correct) ? correct.map(c => String(c).trim().toUpperCase()) : [String(correct).trim().toUpperCase()];
+                if (selArr.length === corrArr.length && selArr.every(v => corrArr.includes(v))) {
+                    isCorrect = true;
+                    pointsEarned = maxScore;
+                }
+            } else if (type === 'benar_salah') {
+                if (typeof correct === 'object' && correct !== null && typeof selected === 'object' && selected !== null) {
+                    let allMatch = true;
+                    const keys = Object.keys(correct);
+                    for (const k of keys) {
+                        if (String(selected[k]).toUpperCase() !== String(correct[k]).toUpperCase()) {
+                            allMatch = false;
+                            break;
+                        }
+                    }
+                    if (allMatch && keys.length > 0) {
+                        isCorrect = true;
+                        pointsEarned = maxScore;
+                    }
+                }
+            } else if (type === 'penjodohan') {
+                if (typeof correct === 'object' && correct !== null && typeof selected === 'object' && selected !== null) {
+                    let allMatch = true;
+                    const keys = Object.keys(correct);
+                    for (const k of keys) {
+                        if (String(selected[k]) !== String(correct[k])) {
+                            allMatch = false;
+                            break;
+                        }
+                    }
+                    if (allMatch && keys.length > 0) {
+                        isCorrect = true;
+                        pointsEarned = maxScore;
+                    }
+                }
+            } else if (type === 'uraian') {
+                isCorrect = null;
+                pointsEarned = 0;
+            }
+        }
+
+        if (isCorrect === true) {
+            correctCount++;
+        }
+        totalPointsEarned += pointsEarned;
+
+        details.push({
+            number: idx + 1,
+            question_type: type,
+            is_correct: isCorrect,
+            points_earned: Math.round(pointsEarned * 100) / 100,
+            max_score: maxScore,
+            selected_answer: selected,
+            correct_answer: correct,
+        });
+    });
+
+    const percentage = totalMaxScore > 0 ? Math.round((totalPointsEarned / totalMaxScore) * 100) : 0;
+
+    dryRunResults.value = {
+        totalQuestions: props.questions.length,
+        answeredCount: answered,
+        correctCount: correctCount,
+        incorrectCount: props.questions.length - correctCount,
+        totalPoints: Math.round(totalPointsEarned * 100) / 100,
+        maxPoints: Math.round(totalMaxScore * 100) / 100,
+        percentage: percentage,
+        details: details,
+    };
+
+    displayDryRunResultModal.value = true;
+};
+
 const displayZoomModal = ref(false);
 const zoomImageUrl = ref('');
 
@@ -655,6 +903,34 @@ const handleWindowBlur = () => {
 };
 
 const reportCheatWarning = async () => {
+    if (props.isDryRun) {
+        warningCount.value++;
+        const warnNum = warningCount.value;
+        if (warnNum === 1 || warnNum === 2) {
+            toast.add({
+                severity: 'warn',
+                summary: `[Simulasi] Pelanggaran Fokus ke-${warnNum}`,
+                detail: `Siswa terdeteksi keluar dari layar ujian. Pada ujian riil, layar akan dikunci selama ${warnNum === 1 ? '1 menit' : '5 menit'}.`,
+                life: 5000
+            });
+        } else if (warnNum === 3) {
+            toast.add({
+                severity: 'error',
+                summary: `[Simulasi] Pelanggaran Fokus ke-3`,
+                detail: `Pada ujian riil, siswa akan otomatis dikeluarkan (logout) dan memerlukan token pengawas untuk masuk kembali.`,
+                life: 6000
+            });
+        } else {
+            toast.add({
+                severity: 'error',
+                summary: `[Simulasi] Pelanggaran Fokus ke-4 (Maksimal)`,
+                detail: `Pada ujian riil, sesi ujian siswa akan otomatis diblokir permanen dan dikumpulkan paksa.`,
+                life: 6000
+            });
+        }
+        return;
+    }
+
     if (isBlocked.value || isSuspended.value || reportingCheat.value || isRedirecting.value) return;
     reportingCheat.value = true;
     try {
@@ -732,6 +1008,7 @@ const startSuspensionTimer = () => {
 
 let heartbeatInterval = null;
 const startHeartbeatTimer = () => {
+    if (props.isDryRun) return; // No heartbeat needed for dry run
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     heartbeatInterval = setInterval(async () => {
         // Jangan heartbeat jika sedang dalam proses redirect
@@ -1054,6 +1331,14 @@ const navigateQuestion = (idx) => {
 // ==========================================
 
 const saveAnswerToServer = async (qId, selectedVal, isDoubtful) => {
+    // Selalu update state lokal terlebih dahulu
+    answers.value[qId] = {
+        selected_answer: selectedVal,
+        is_doubtful: isDoubtful
+    };
+
+    if (props.isDryRun) return; // Mode simulasi tidak mengirim ke database!
+
     if (isBlocked.value || isSuspended.value || isRedirecting.value) return;
     try {
         await axios.post(route('student.cbt.save-answer', props.exam.id), {
@@ -1061,12 +1346,6 @@ const saveAnswerToServer = async (qId, selectedVal, isDoubtful) => {
             selected_answer: selectedVal,
             is_doubtful: isDoubtful
         });
-        
-        // Update state lokal
-        answers.value[qId] = {
-            selected_answer: selectedVal,
-            is_doubtful: isDoubtful
-        };
     } catch (error) {
         if (error.response && (error.response.status === 404 || error.response.status === 400)) return;
         toast.add({ severity: 'error', summary: 'Error Koneksi', detail: 'Jawaban gagal terkirim ke server. Periksa koneksi internet Anda.', life: 4000 });
@@ -1301,12 +1580,62 @@ const getNumButtonClass = (qId, idx) => {
     return classes;
 };
 
+// ==========================================
+// MUAT ULANG SOAL (IN-APP PARTIAL RELOAD)
+// ==========================================
+const isReloadingQuestions = ref(false);
+
+const reloadQuestions = () => {
+    if (isReloadingQuestions.value) return;
+
+    // Amankan input teks yang sedang aktif sebelum reload
+    const qType = currentQuestion.value?.question_type;
+    if (qType === 'isian_singkat') {
+        saveShortAnswer();
+    } else if (qType === 'uraian') {
+        saveEssayAnswer();
+    }
+
+    isReloadingQuestions.value = true;
+    router.reload({
+        only: ['questions'],
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            syncLocalInputs();
+            toast.add({
+                severity: 'info',
+                summary: 'Soal Diperbarui',
+                detail: 'Teks soal dan pilihan berhasil dimuat ulang dengan versi terbaru.',
+                life: 3000,
+            });
+        },
+        onError: () => {
+            toast.add({
+                severity: 'error',
+                summary: 'Gagal Memuat Ulang',
+                detail: 'Terjadi kendala jaringan saat memuat ulang soal. Silakan coba lagi.',
+                life: 4000,
+            });
+        },
+        onFinish: () => {
+            isReloadingQuestions.value = false;
+        },
+    });
+};
+
 // SUBMIT EXAM LOGIC
 const openSubmitConfirmModal = () => {
     displaySubmitModal.value = true;
 };
 
 const submitExam = () => {
+    if (props.isDryRun) {
+        displaySubmitModal.value = false;
+        calculateDryRunScore();
+        return;
+    }
+
     isSubmitting.value = true;
     // Set isRedirecting agar event blur/visibility tidak menghitung pelanggaran
     // saat router melakukan navigasi setelah submit
@@ -1327,6 +1656,12 @@ const submitExam = () => {
 };
 
 const autoSubmitExam = () => {
+    if (props.isDryRun) {
+        toast.add({ severity: 'info', summary: 'Waktu Habis (Simulasi)', detail: 'Waktu ujian simulasi telah habis.', life: 4000 });
+        calculateDryRunScore();
+        return;
+    }
+
     // Set flag redirect & hentikan semua interval SEBELUM submit
     // agar heartbeat tidak terus berjalan dan menyebabkan double-action
     // (misal: heartbeat mendeteksi status 'submitted' lalu trigger overlay/redirect ulang)

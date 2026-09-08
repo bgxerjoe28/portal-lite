@@ -3,6 +3,7 @@
 namespace Modules\Cbt\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
@@ -33,10 +34,18 @@ class CbtRoomController extends Controller
             'capacity' => 'required|integer|min:1|max:100',
         ]);
 
-        CbtRoom::create([
+        $room = CbtRoom::create([
             'name' => $request->name,
             'capacity' => $request->capacity,
         ]);
+
+        ActivityLogger::log(
+            'CBT_ROOM_CREATE',
+            "Menambahkan Ruang Ujian CBT: {$room->name} (Kapasitas: {$room->capacity})",
+            $room,
+            null,
+            $room->toArray()
+        );
 
         return redirect()->back()->with('success', 'Ruang ujian berhasil dibuat.');
     }
@@ -49,10 +58,19 @@ class CbtRoomController extends Controller
         ]);
 
         $room = CbtRoom::findOrFail($id);
+        $old = $room->toArray();
         $room->update([
             'name' => $request->name,
             'capacity' => $request->capacity,
         ]);
+
+        ActivityLogger::log(
+            'CBT_ROOM_UPDATE',
+            "Memperbarui data Ruang Ujian CBT: {$room->name}",
+            $room,
+            $old,
+            $room->toArray()
+        );
 
         return redirect()->back()->with('success', 'Ruang ujian berhasil diperbarui.');
     }
@@ -60,7 +78,17 @@ class CbtRoomController extends Controller
     public function destroy($id)
     {
         $room = CbtRoom::findOrFail($id);
+        $name = $room->name;
+        $old = $room->toArray();
         $room->delete();
+
+        ActivityLogger::log(
+            'CBT_ROOM_DELETE',
+            "Menghapus Ruang Ujian CBT: {$name}",
+            $room,
+            $old,
+            null
+        );
 
         return redirect()->back()->with('success', 'Ruang ujian berhasil dihapus.');
     }

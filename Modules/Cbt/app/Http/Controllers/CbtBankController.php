@@ -3,6 +3,7 @@
 namespace Modules\Cbt\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -28,6 +29,7 @@ use Modules\Cbt\Models\CbtCttStudentResult;
 use Modules\Cbt\Models\CbtIrtStudentAbility;
 use Modules\Cbt\Services\CttAnalyticsService;
 use Modules\Cbt\Services\IrtMicroserviceClient;
+use Carbon\Carbon;
 
 class CbtBankController extends Controller
 {
@@ -91,12 +93,20 @@ class CbtBankController extends Controller
             }
         }
 
-        CbtBank::create([
+        $bank = CbtBank::create([
             'name' => $request->name,
             'subject_id' => $request->subject_id,
             'teacher_id' => $teacherId, // bisa null untuk admin
             'description' => $request->description,
         ]);
+
+        ActivityLogger::log(
+            'CBT_BANK_CREATE',
+            "Membuat Bank Soal CBT baru: {$bank->name}",
+            $bank,
+            null,
+            $bank->toArray()
+        );
 
         return redirect()->back()->with('success', 'Bank Soal berhasil dibuat.');
     }
@@ -110,11 +120,20 @@ class CbtBankController extends Controller
         ]);
 
         $bank = CbtBank::findOrFail($id);
+        $old = $bank->toArray();
         $bank->update([
             'name' => $request->name,
             'subject_id' => $request->subject_id,
             'description' => $request->description,
         ]);
+
+        ActivityLogger::log(
+            'CBT_BANK_UPDATE',
+            "Memperbarui Bank Soal CBT: {$bank->name}",
+            $bank,
+            $old,
+            $bank->toArray()
+        );
 
         return redirect()->back()->with('success', 'Bank Soal berhasil diperbarui.');
     }
@@ -122,11 +141,21 @@ class CbtBankController extends Controller
     public function destroy($id)
     {
         $bank = CbtBank::findOrFail($id);
+        $name = $bank->name;
+        $old = $bank->toArray();
 
         // Hapus semua file media soal dari storage sebelum hapus DB record
         $this->deleteBankMedia($bank->id);
 
         $bank->delete();
+
+        ActivityLogger::log(
+            'CBT_BANK_DELETE',
+            "Menghapus Bank Soal CBT: {$name}",
+            $bank,
+            $old,
+            null
+        );
 
         return redirect()->back()->with('success', 'Bank Soal berhasil dihapus.');
     }
@@ -136,9 +165,17 @@ class CbtBankController extends Controller
         $bank = CbtBank::with(['subject', 'teacher'])->findOrFail($id);
         $questions = CbtQuestion::where('cbt_bank_id', $id)->orderBy('id', 'asc')->get();
 
+        // Cek ujian yang sedang aktif menggunakan bank soal ini
+        $activeExams = CbtExam::where('cbt_bank_id', $id)
+            ->where('is_active', true)
+            ->where('start_time', '<=', now())
+            ->where('end_time', '>=', now())
+            ->get(['title', 'start_time', 'end_time']);
+
         return Inertia::render('Cbt/Bank/Questions', [
-            'bank' => $bank,
-            'questions' => $questions,
+            'bank'        => $bank,
+            'questions'   => $questions,
+            'activeExams' => $activeExams,
         ]);
     }
 
@@ -196,6 +233,24 @@ class CbtBankController extends Controller
 
         $bank = CbtBank::findOrFail($id);
 
+        // Cek apakah ada ujian aktif yang menggunakan bank ini
+        // (dapat di-bypass jika user sudah konfirmasi via force_import=1)
+        if (!$request->boolean('force_import')) {
+            $activeExams = CbtExam::where('cbt_bank_id', $bank->id)
+                ->where('is_active', true)
+                ->where('start_time', '<=', Carbon::now())
+                ->where('end_time', '>=', Carbon::now())
+                ->get(['title', 'start_time', 'end_time']);
+
+            if ($activeExams->isNotEmpty()) {
+                $examTitles = $activeExams->pluck('title')->toArray();
+                return response()->json([
+                    'message'      => 'Bank Soal ini sedang digunakan oleh ujian yang aktif. Import soal tidak dapat dilakukan.',
+                    'active_exams' => $examTitles,
+                ], 409);
+            }
+        }
+
         $fileSoal  = $request->file('file_soal');
         $fileKunci = $request->file('file_kunci');
 
@@ -205,6 +260,13 @@ class CbtBankController extends Controller
 
         try {
             WordQuestionParser::import($bank->id, $docxPath, $xlsxPath);
+
+            $count = $bank->questions()->count();
+            ActivityLogger::log(
+                'CBT_BANK_IMPORT',
+                "Mengimpor soal ke Bank Soal: {$bank->name} (Total sekarang: {$count} butir soal)",
+                $bank
+            );
 
             return response()->json([
                 'message' => 'Soal berhasil di-import dari Word dan kunci jawaban berhasil diproses.',
@@ -228,11 +290,32 @@ class CbtBankController extends Controller
     public function clearQuestions($id)
     {
         $bank = CbtBank::findOrFail($id);
+        $deletedCount = $bank->questions()->count();
+
+        // Cek apakah ada ujian aktif yang menggunakan bank ini
+        $activeExams = CbtExam::where('cbt_bank_id', $bank->id)
+            ->where('is_active', true)
+            ->where('start_time', '<=', Carbon::now())
+            ->where('end_time', '>=', Carbon::now())
+            ->get(['title', 'start_time', 'end_time']);
+
+        if ($activeExams->isNotEmpty()) {
+            $examTitles = $activeExams->pluck('title')->implode(', ');
+            return redirect()->back()->withErrors([
+                'active_exams' => "Bank Soal ini sedang digunakan oleh ujian aktif: {$examTitles}. Soal tidak dapat dihapus saat ujian berlangsung.",
+            ]);
+        }
 
         // Hapus file media soal dari storage sebelum hapus record soal
         $this->deleteBankMedia($bank->id);
 
         $bank->questions()->delete();
+
+        ActivityLogger::log(
+            'CBT_BANK_CLEAR',
+            "Mengosongkan {$deletedCount} butir soal dari Bank Soal: {$bank->name}",
+            $bank
+        );
 
         return redirect()->back()->with('success', 'Semua soal di dalam Bank Soal ini telah dibersihkan.');
     }
@@ -270,6 +353,51 @@ class CbtBankController extends Controller
         $question->update($updateData);
 
         return redirect()->back()->with('success', 'Kunci jawaban & bobot soal berhasil diperbarui.');
+    }
+
+    /**
+     * Patch teks soal dan opsi jawaban secara individual (tanpa mereset semua soal).
+     */
+    public function patchQuestion(Request $request, $bankId, $questionId)
+    {
+        $user = Auth::user();
+        $bank = CbtBank::findOrFail($bankId);
+
+        // Otorisasi kepemilikan
+        if (!$user->hasRole('admin') && $user->hasRole('guru')) {
+            if ($bank->teacher_id && $bank->teacher_id !== $user->teacher?->id) {
+                abort(403, 'Anda tidak memiliki hak akses untuk mengubah Bank Soal ini.');
+            }
+        }
+
+        $question = CbtQuestion::where('cbt_bank_id', $bankId)->findOrFail($questionId);
+
+        $request->validate([
+            'question_text' => 'required|string',
+            'options'       => 'nullable|array',
+        ]);
+
+        $old = $question->toArray();
+
+        $updateData = [
+            'question_text' => $request->question_text,
+        ];
+
+        if ($request->has('options')) {
+            $updateData['options'] = $request->options;
+        }
+
+        $question->update($updateData);
+
+        ActivityLogger::log(
+            'CBT_QUESTION_PATCH',
+            "Memperbarui teks soal #{$question->id} di Bank Soal: {$bank->name}",
+            $question,
+            $old,
+            $question->toArray()
+        );
+
+        return redirect()->back()->with('success', 'Teks soal berhasil diperbarui.');
     }
 
     /**

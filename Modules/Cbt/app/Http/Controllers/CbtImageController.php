@@ -2,12 +2,64 @@
 
 namespace Modules\Cbt\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CbtImageController
 {
+    /**
+     * Upload gambar soal CBT dari RichTextEditor.
+     * Dapat diakses oleh admin, guru, atau pengguna dengan hak akses CBT.
+     *
+     * Route: POST /cbt/questions/upload-image
+     * Name:  cbt.questions.upload_image
+     */
+    public function upload(Request $request): JsonResponse
+    {
+        $request->validate([
+            'image' => 'required|image|max:10240', // Maksimal 10MB
+            'bank_id' => 'nullable|integer',
+        ]);
+
+        $file = $request->file('image');
+        $ext = strtolower($file->getClientOriginalExtension() ?: 'png');
+        $bankId = $request->input('bank_id');
+
+        // Pola nama: cbt_bank_{bankId}_{timestamp}_{random}.{ext}
+        $prefix = $bankId ? "cbt_bank_{$bankId}_" : "cbt_img_";
+        $filename = $prefix . time() . '_' . Str::random(8) . '.' . $ext;
+
+        $disk = Storage::disk(config('filesystems.cbt_disk', 's3_cbt'));
+        $contents = file_get_contents($file->getRealPath());
+
+        // 1. Simpan ke disk aktif (MinIO S3 / CBT disk)
+        try {
+            $disk->put("cbt_questions/{$filename}", $contents, 'public');
+        } catch (\Throwable $e) {
+            // Jika storage utama timeout/down, fallback ke disk lokal
+        }
+
+        // 2. Simpan juga ke disk lokal sebagai fallback
+        try {
+            $mediaDest = storage_path('app/public/cbt_questions');
+            if (!is_dir($mediaDest)) {
+                @mkdir($mediaDest, 0755, true);
+            }
+            file_put_contents("{$mediaDest}/{$filename}", $contents);
+        } catch (\Throwable $e) {
+            // Silently continue
+        }
+
+        $url = route('cbt.questions.image', ['filename' => $filename]);
+
+        return response()->json([
+            'url'      => $url,
+            'filename' => $filename,
+        ]);
+    }
     /**
      * Stream a CBT question image from the active storage disk (MinIO, S3, or local).
      *

@@ -87,7 +87,20 @@ class CbtProctorScheduleController extends Controller
             'cbt_session_id.unique' => 'Jadwal untuk ruangan dan sesi ini pada tanggal tersebut sudah ada.',
         ]);
 
-        CbtProctorSchedule::create($request->all());
+        $schedule = CbtProctorSchedule::create($request->all());
+        $schedule->load(['room', 'session', 'teacher']);
+
+        $roomName = $schedule->room?->name ?? 'Ruang -';
+        $sessionName = $schedule->session?->name ?? 'Sesi -';
+        $teacherName = $schedule->teacher?->full_name ?? 'Guru -';
+
+        \App\Services\ActivityLogger::log(
+            'CBT_PROCTOR_SCHEDULE_CREATE',
+            "Admin menjadwalkan Pengawas CBT ({$teacherName}) di {$roomName} untuk {$sessionName} pada tanggal {$schedule->date}",
+            $schedule,
+            null,
+            $schedule->toArray()
+        );
 
         return redirect()->back()->with('success', 'Jadwal pengawas berhasil ditambahkan.');
     }
@@ -115,8 +128,22 @@ class CbtProctorScheduleController extends Controller
             'cbt_session_id.unique' => 'Jadwal untuk ruangan dan sesi ini pada tanggal tersebut sudah ada.',
         ]);
 
-        $schedule = CbtProctorSchedule::findOrFail($id);
+        $schedule = CbtProctorSchedule::with(['room', 'session', 'teacher'])->findOrFail($id);
+        $old = $schedule->toArray();
         $schedule->update($request->all());
+        $schedule->load(['room', 'session', 'teacher']);
+
+        $roomName = $schedule->room?->name ?? 'Ruang -';
+        $sessionName = $schedule->session?->name ?? 'Sesi -';
+        $teacherName = $schedule->teacher?->full_name ?? 'Guru -';
+
+        \App\Services\ActivityLogger::log(
+            'CBT_PROCTOR_SCHEDULE_UPDATE',
+            "Admin memperbarui Jadwal Pengawas CBT: {$teacherName} di {$roomName} ({$sessionName}, Tanggal {$schedule->date})",
+            $schedule,
+            $old,
+            $schedule->toArray()
+        );
 
         return redirect()->back()->with('success', 'Jadwal pengawas berhasil diperbarui.');
     }
@@ -128,8 +155,21 @@ class CbtProctorScheduleController extends Controller
             return redirect()->back()->with('error', 'Hanya Admin yang memiliki hak untuk menghapus jadwal pengawas.');
         }
 
-        $schedule = CbtProctorSchedule::findOrFail($id);
+        $schedule = CbtProctorSchedule::with(['room', 'session', 'teacher'])->findOrFail($id);
+        $roomName = $schedule->room?->name ?? 'Ruang -';
+        $sessionName = $schedule->session?->name ?? 'Sesi -';
+        $teacherName = $schedule->teacher?->full_name ?? 'Guru -';
+        $old = $schedule->toArray();
+
         $schedule->delete();
+
+        \App\Services\ActivityLogger::log(
+            'CBT_PROCTOR_SCHEDULE_DELETE',
+            "Admin menghapus Jadwal Pengawas CBT: {$teacherName} di {$roomName} ({$sessionName}, Tanggal {$schedule->date})",
+            $schedule,
+            $old,
+            null
+        );
 
         return redirect()->back()->with('success', 'Jadwal pengawas berhasil dihapus.');
     }

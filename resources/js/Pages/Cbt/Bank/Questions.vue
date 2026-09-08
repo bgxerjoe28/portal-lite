@@ -25,12 +25,24 @@
                 </div>
             </div>
 
+            <!-- Warning: Ujian Aktif -->
+            <div v-if="props.activeExams && props.activeExams.length > 0" class="mb-4 p-3 bg-orange-50 border-round border border-orange-300 flex align-items-start gap-3 text-sm text-orange-900">
+                <i class="pi pi-exclamation-triangle text-2xl text-orange-500 flex-shrink-0 mt-1"></i>
+                <div class="line-height-3">
+                    <b>⚠️ Ujian Sedang Berlangsung!</b> Bank soal ini sedang digunakan oleh ujian aktif berikut:
+                    <ul class="m-0 mt-1 pl-4">
+                        <li v-for="exam in props.activeExams" :key="exam.title"><b>{{ exam.title }}</b></li>
+                    </ul>
+                    <span class="text-orange-700 mt-1 block">Perubahan teks/pilihan soal akan <b>langsung berlaku</b> bagi siswa yang sedang mengerjakan. Hanya perbaiki soal yang benar-benar bermasalah.</span>
+                </div>
+            </div>
+
             <!-- Edukasi / Info Banner Sinkronisasi Nilai -->
             <div class="mb-4 p-3 bg-blue-50 border-round border border-blue-200 flex align-items-center gap-3 text-sm text-blue-900">
                 <i class="pi pi-info-circle text-2xl text-blue-600 flex-shrink-0"></i>
                 <div class="line-height-3">
                     <b>Tips Pembaruan Kunci:</b> Jika ujian sudah dikerjakan siswa dan Anda mengoreksi kunci jawaban (baik via edit manual maupun import Excel revisi), 
-                    silakan buka menu <b>Jadwal Ujian &gt; Hasil Ujian</b> lalu klik tombol <b>"Hitung Ulang Nilai & Analisis"</b> agar seluruh nilai peserta langsung diperbarui.
+                    silakan buka menu <b>Jadwal Ujian &gt; Hasil Ujian</b> lalu klik tombol <b>"Hitung Ulang Nilai &amp; Analisis"</b> agar seluruh nilai peserta langsung diperbarui.
                 </div>
             </div>
 
@@ -50,14 +62,24 @@
                             <Tag v-if="q.grouping" :value="'Grup ' + q.grouping" severity="help" />
                         </div>
                         
-                        <Button 
-                            label="Edit Kunci & Bobot" 
-                            icon="pi pi-pencil" 
-                            size="small" 
-                            severity="warning" 
-                            outlined 
-                            @click="openEditModal(q, idx)" 
-                        />
+                        <div class="flex gap-2">
+                            <Button 
+                                label="Edit Soal" 
+                                icon="pi pi-file-edit" 
+                                size="small" 
+                                severity="info" 
+                                outlined 
+                                @click="openPatchModal(q, idx)" 
+                            />
+                            <Button 
+                                label="Edit Kunci & Bobot" 
+                                icon="pi pi-pencil" 
+                                size="small" 
+                                severity="warning" 
+                                outlined 
+                                @click="openEditModal(q, idx)" 
+                            />
+                        </div>
                     </div>
 
                     <!-- Question Text -->
@@ -255,6 +277,56 @@
         </Dialog>
 
         <!-- ========================================================================= -->
+        <!-- MODAL PATCH: EDIT TEKS SOAL TUNGGAL -->
+        <!-- ========================================================================= -->
+        <Dialog 
+            v-model:visible="patchModalVisible" 
+            :header="`Edit Teks Soal #${patchingIndex + 1}`" 
+            :modal="true" 
+            :style="{ width: '700px', maxWidth: '95vw' }"
+        >
+            <div v-if="patchingQuestion" class="p-fluid flex flex-column gap-4">
+                <!-- Warning jika ujian aktif -->
+                <div v-if="props.activeExams && props.activeExams.length > 0" class="p-3 bg-orange-50 border-round border border-orange-300 text-sm text-orange-900">
+                    <i class="pi pi-exclamation-triangle mr-1 text-orange-600"></i>
+                    <b>Perhatian:</b> Ada ujian yang sedang berjalan. Perubahan ini akan <b>langsung terlihat</b> oleh siswa saat halaman ujian di-refresh.
+                </div>
+
+                <!-- Teks Soal -->
+                <div class="field">
+                    <label class="font-bold block mb-2">Teks Soal <span class="text-red-500">*</span></label>
+                    <RichTextEditor
+                        v-model="patchForm.question_text"
+                        placeholder="Ketik teks soal di sini..."
+                        :uploadUrl="route('cbt.questions.upload_image')"
+                        :extraUploadData="{ bank_id: props.bank?.id }"
+                    />
+                    <small class="text-500 mt-1 block">Gunakan toolbar di atas untuk format teks dan upload gambar. Perubahan langsung tersimpan saat klik "Simpan Perubahan".</small>
+                </div>
+
+                <!-- Pilihan Jawaban (hanya untuk tipe pilihan_ganda, list, dll.) -->
+                <div class="field" v-if="['pilihan_ganda', 'survey', 'list', 'checklist', 'skor_berbeda'].includes(patchingQuestion.question_type)">
+                    <label class="font-bold block mb-2">Pilihan Jawaban</label>
+                    <div class="flex flex-column gap-2">
+                        <div v-for="(val, optKey) in patchForm.options" :key="optKey" class="flex align-items-center gap-2">
+                            <span class="font-bold text-primary flex align-items-center justify-content-center border-circle" style="width:28px;height:28px;min-width:28px;background:#e8f4fd;">{{ optKey }}</span>
+                            <InputText v-model="patchForm.options[optKey]" class="flex-1" :placeholder="'Teks pilihan ' + optKey" />
+                        </div>
+                    </div>
+                    <small class="text-500 mt-1 block">
+                        <i class="pi pi-info-circle mr-1"></i>
+                        Teks ditampilkan bersih (HTML otomatis di-strip). Ketik teks saja — format akan disimpan secara otomatis dan tampilan di halaman ujian siswa tidak akan terganggu.
+                    </small>
+                </div>
+
+                <div class="flex justify-content-end gap-2 pt-3 border-top-1 border-200">
+                    <Button label="Batal" severity="secondary" text @click="patchModalVisible = false" />
+                    <Button label="Simpan Perubahan" icon="pi pi-check" severity="info" :loading="isPatchSubmitting" @click="submitPatchQuestion" />
+                </div>
+            </div>
+        </Dialog>
+
+        <!-- ========================================================================= -->
         <!-- MODAL 2: IMPORT REVISI KUNCI EXCEL (AMAN TANPA MERUSAK ID SOAL) -->
         <!-- ========================================================================= -->
         <Dialog 
@@ -319,10 +391,12 @@ import InputNumber from 'primevue/inputnumber';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import RadioButton from 'primevue/radiobutton';
+import RichTextEditor from '@/Components/RichTextEditor.vue';
 
 const props = defineProps({
     bank: Object,
     questions: Array,
+    activeExams: { type: Array, default: () => [] },
 });
 
 // Edit Key Modal State
@@ -399,6 +473,80 @@ const importModalVisible = ref(false);
 const keyFileInput = ref(null);
 const selectedKeyFile = ref(null);
 const isImporting = ref(false);
+
+// ============================
+// Patch Question Modal State
+// ============================
+const patchModalVisible = ref(false);
+const patchingQuestion = ref(null);
+const patchingIndex = ref(0);
+const isPatchSubmitting = ref(false);
+const patchForm = reactive({
+    question_text: '',
+    options: {},
+});
+
+/**
+ * Strip semua tag HTML dan kembalikan teks bersih.
+ * Digunakan agar guru tidak perlu melihat/mengedit raw HTML di field pilihan jawaban.
+ */
+const stripHtml = (html) => {
+    if (!html || typeof html !== 'string') return '';
+    return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+};
+
+const openPatchModal = (q, idx) => {
+    patchingQuestion.value = q;
+    patchingIndex.value = idx;
+    patchForm.question_text = q.question_text || '';
+    // Strip HTML dari setiap opsi agar tampil bersih di InputText
+    const rawOptions = q.options ? JSON.parse(JSON.stringify(q.options)) : {};
+    const cleanOptions = {};
+    for (const key in rawOptions) {
+        const val = rawOptions[key];
+        // Hanya strip jika nilainya string HTML, biarkan jika number/object (skor_berbeda)
+        cleanOptions[key] = typeof val === 'string' ? stripHtml(val) : val;
+    }
+    patchForm.options = cleanOptions;
+    patchModalVisible.value = true;
+};
+
+const submitPatchQuestion = () => {
+    if (!patchingQuestion.value) return;
+    isPatchSubmitting.value = true;
+
+    const payload = {
+        question_text: patchForm.question_text,
+    };
+
+    if (['pilihan_ganda', 'survey', 'list', 'checklist', 'skor_berbeda'].includes(patchingQuestion.value.question_type)) {
+        // Re-wrap teks pilihan ke dalam <p class="mb-2"> agar konsisten dengan format parser Word
+        const wrappedOptions = {};
+        for (const key in patchForm.options) {
+            const val = patchForm.options[key];
+            if (typeof val === 'string' && val.trim() !== '') {
+                // Sudah ada tag HTML? langsung pakai. Plain text? bungkus.
+                wrappedOptions[key] = val.trimStart().startsWith('<') ? val : `<p class="mb-2">${val}</p>`;
+            } else {
+                wrappedOptions[key] = val;
+            }
+        }
+        payload.options = wrappedOptions;
+    }
+
+    router.put(
+        route('cbt.bank.questions.patch', [props.bank.id, patchingQuestion.value.id]),
+        payload,
+        {
+            onSuccess: () => {
+                patchModalVisible.value = false;
+            },
+            onFinish: () => {
+                isPatchSubmitting.value = false;
+            }
+        }
+    );
+};
 
 const openImportModal = () => {
     selectedKeyFile.value = null;

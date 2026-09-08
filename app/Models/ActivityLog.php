@@ -32,6 +32,46 @@ class ActivityLog extends Model
      */
     public function scopeFilter($query, array $filters)
     {
+        // Filter kategori aksi
+        $query->when($filters['category'] ?? null, function ($q, $category) {
+            if ($category === 'cbt') {
+                $q->where('action', 'like', 'CBT_%');
+            } elseif ($category === 'kesiswaan') {
+                $q->where(function ($sub) {
+                    $sub->where('action', 'like', 'EXTRA_%')
+                        ->orWhere('action', 'like', 'DISCIPLINE_%')
+                        ->orWhere('action', 'like', 'KESISWAAN_%');
+                });
+            } elseif ($category === 'assignment') {
+                $q->where(function ($sub) {
+                    $sub->where('action', 'like', 'ASSIGNMENT_%')
+                        ->orWhere('action', 'like', 'PENUGASAN_%')
+                        ->orWhere('action', 'like', 'GRADE_%');
+                });
+            } elseif ($category === 'academic') {
+                $q->where(function ($sub) {
+                    $sub->where('action', 'like', 'USER_%')
+                        ->orWhere('action', 'like', 'SCHEDULE_%')
+                        ->orWhere('action', 'like', 'CLASSROOM_%')
+                        ->orWhere('action', 'like', 'SUBJECT_%')
+                        ->orWhere('action', 'like', 'BACKUP%')
+                        ->orWhere('action', 'like', 'RESTORE%')
+                        ->orWhere('action', 'like', 'IMPERSONATE%');
+                });
+            } elseif ($category === 'auth') {
+                $q->whereIn('action', ['LOGIN', 'LOGOUT', 'LOGIN_FAILED']);
+            }
+        });
+
+        // Sembunyikan login/logout siswa jika diaktifkan (default agar log administratif tidak tenggelam)
+        $query->when(isset($filters['hide_student_logins']) && filter_var($filters['hide_student_logins'], FILTER_VALIDATE_BOOLEAN), function ($q) {
+            $q->where(function ($sub) {
+                $sub->whereNotIn('action', ['LOGIN', 'LOGOUT'])
+                    ->orWhere('role', '!=', 'siswa')
+                    ->orWhereNull('role');
+            });
+        });
+
         // Cari dari deskripsi, nama user, atau email
         $query->when($filters['search'] ?? null, function ($q, $search) {
             $q->where(function ($sub) use ($search) {

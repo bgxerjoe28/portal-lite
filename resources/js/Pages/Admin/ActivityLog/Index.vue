@@ -12,17 +12,84 @@
                     <div>
                         <h1 class="m-0 text-900 text-2xl font-bold">Log Aktivitas & Audit Trail</h1>
                         <span class="text-600 text-sm">
-                            Pantau riwayat login, keamanan, dan seluruh modifikasi data pada sistem secara auditable.
+                            Pantau riwayat aksi administratif (sesi ujian, jadwal, bank soal, penugasan, akun user) dan autentikasi secara transparan.
                         </span>
                     </div>
                 </div>
                 <div class="flex align-items-center gap-2">
-                    <Tag severity="info" value="Append-Only Log" icon="pi pi-lock" />
+                    <Tag severity="info" value="Append-Only Audit Log" icon="pi pi-shield" />
                     <span class="text-sm font-bold text-600">Total: {{ logs.total }} Catatan</span>
                 </div>
             </div>
 
-            <!-- FILTER BAR -->
+            <!-- QUICK CATEGORY TABS & STUDENT LOGIN TOGGLE -->
+            <div class="flex flex-column lg:flex-row align-items-stretch lg:align-items-center justify-content-between gap-3 mb-3">
+                <!-- Category Pills -->
+                <div class="flex flex-wrap gap-2">
+                    <Button 
+                        :label="`Semua Log (${counts.all || 0})`" 
+                        icon="pi pi-list" 
+                        size="small"
+                        :outlined="currentCategory !== null" 
+                        :severity="currentCategory === null ? 'primary' : 'secondary'"
+                        @click="selectCategory(null)" 
+                    />
+                    <Button 
+                        :label="`Kesiswaan & Ekstra (${counts.kesiswaan || 0})`" 
+                        icon="pi pi-star" 
+                        size="small"
+                        :outlined="currentCategory !== 'kesiswaan'" 
+                        :severity="currentCategory === 'kesiswaan' ? 'success' : 'secondary'"
+                        @click="selectCategory('kesiswaan')" 
+                    />
+                    <Button 
+                        :label="`CBT & Sesi Ujian (${counts.cbt || 0})`" 
+                        icon="pi pi-desktop" 
+                        size="small"
+                        :outlined="currentCategory !== 'cbt'" 
+                        :severity="currentCategory === 'cbt' ? 'help' : 'secondary'"
+                        @click="selectCategory('cbt')" 
+                    />
+                    <Button 
+                        :label="`Penugasan & Nilai (${counts.assignment || 0})`" 
+                        icon="pi pi-file-edit" 
+                        size="small"
+                        :outlined="currentCategory !== 'assignment'" 
+                        :severity="currentCategory === 'assignment' ? 'warn' : 'secondary'"
+                        @click="selectCategory('assignment')" 
+                    />
+                    <Button 
+                        :label="`Akademik & User (${counts.academic || 0})`" 
+                        icon="pi pi-users" 
+                        size="small"
+                        :outlined="currentCategory !== 'academic'" 
+                        :severity="currentCategory === 'academic' ? 'info' : 'secondary'"
+                        @click="selectCategory('academic')" 
+                    />
+                    <Button 
+                        :label="`Autentikasi & Login (${counts.auth || 0})`" 
+                        icon="pi pi-sign-in" 
+                        size="small"
+                        :outlined="currentCategory !== 'auth'" 
+                        :severity="currentCategory === 'auth' ? 'contrast' : 'secondary'"
+                        @click="selectCategory('auth')" 
+                    />
+                </div>
+
+                <!-- Toggle Sembunyikan Login Siswa -->
+                <div class="flex align-items-center gap-2 bg-blue-50 border-1 border-blue-200 border-round-xl px-3 py-2">
+                    <ToggleSwitch 
+                        v-model="hideStudentLogins" 
+                        @change="toggleHideStudentLogins"
+                    />
+                    <div class="flex flex-column cursor-pointer" @click="toggleHideStudentLoginsDirectly">
+                        <span class="text-xs font-bold text-blue-900 line-height-1">Sembunyikan Login Siswa</span>
+                        <small class="text-blue-600 text-xs mt-1">Fokuskan pada aksi operasional guru & admin</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ADVANCED FILTER BAR -->
             <div class="surface-ground p-3 border-round border-1 border-300 mb-4">
                 <div class="grid formgrid p-fluid align-items-end">
                     <div class="col-12 md:col-3">
@@ -44,7 +111,7 @@
                         />
                     </div>
                     <div class="col-12 sm:col-6 md:col-2">
-                        <label class="block text-sm font-bold text-700 mb-1">Jenis Aksi</label>
+                        <label class="block text-sm font-bold text-700 mb-1">Jenis Aksi Spesifik</label>
                         <Select
                             v-model="filterForm.action"
                             :options="actionOptions"
@@ -77,20 +144,20 @@
                 class="p-datatable-sm"
                 emptyMessage="Belum ada catatan log aktivitas yang sesuai filter."
             >
-                <Column header="Waktu" style="width: 130px">
+                <Column header="Waktu" style="width: 140px">
                     <template #body="slotProps">
-                        <div class="text-sm font-medium text-900">
+                        <div class="text-sm font-semibold text-900">
                             {{ formatDateTime(slotProps.data.created_at) }}
                         </div>
                     </template>
                 </Column>
 
-                <Column header="Pengguna" style="width: 200px">
+                <Column header="Pengguna / Pelaku" style="width: 210px">
                     <template #body="slotProps">
                         <div class="flex flex-column">
-                            <span class="font-bold text-900">{{ slotProps.data.user_name || 'System' }}</span>
+                            <span class="font-bold text-900">{{ slotProps.data.user_name || 'System / Guest' }}</span>
                             <span v-if="slotProps.data.user_email" class="text-xs text-500">{{ slotProps.data.user_email }}</span>
-                            <div class="mt-1">
+                            <div class="mt-1 flex align-items-center gap-1">
                                 <Tag
                                     :value="slotProps.data.role || 'system'"
                                     :severity="getRoleSeverity(slotProps.data.role)"
@@ -101,19 +168,19 @@
                     </template>
                 </Column>
 
-                <Column header="Aksi" style="width: 140px">
+                <Column header="Jenis Aksi" style="width: 180px">
                     <template #body="slotProps">
                         <Tag
-                            :value="slotProps.data.action"
+                            :value="formatActionLabel(slotProps.data.action)"
                             :severity="getActionSeverity(slotProps.data.action)"
-                            class="font-bold"
+                            class="font-bold text-xs"
                         />
                     </template>
                 </Column>
 
-                <Column header="Deskripsi & Sasaran">
+                <Column header="Deskripsi & Sasaran Aktivitas">
                     <template #body="slotProps">
-                        <div class="text-900 line-height-3">
+                        <div class="text-900 font-medium line-height-3">
                             {{ slotProps.data.description }}
                         </div>
                         <div v-if="slotProps.data.subject_type" class="text-xs text-600 mt-1 font-mono">
@@ -123,24 +190,25 @@
                     </template>
                 </Column>
 
-                <Column header="IP & Perangkat" style="width: 150px">
+                <Column header="IP & Perangkat" style="width: 140px">
                     <template #body="slotProps">
-                        <div class="text-sm font-mono text-700">
+                        <div class="text-xs font-mono text-700">
                             {{ slotProps.data.ip_address || '-' }}
                         </div>
-                        <div class="text-xs text-500 white-space-nowrap overflow-hidden text-overflow-ellipsis" style="max-width: 140px;" :title="slotProps.data.user_agent">
+                        <div class="text-xs text-500 white-space-nowrap overflow-hidden text-overflow-ellipsis" style="max-width: 130px;" :title="slotProps.data.user_agent">
                             {{ slotProps.data.user_agent || '-' }}
                         </div>
                     </template>
                 </Column>
 
-                <Column header="Audit Diff" style="width: 120px; text-align: center;">
+                <Column header="Audit Diff" style="width: 110px; text-align: center;">
                     <template #body="slotProps">
                         <Button
                             v-if="slotProps.data.old_values || slotProps.data.new_values"
                             icon="pi pi-eye"
-                            label="Perubahan"
-                            class="p-button-outlined p-button-sm p-button-info font-bold"
+                            label="Diff"
+                            size="small"
+                            class="p-button-outlined p-button-info font-bold"
                             @click="showDetailModal(slotProps.data)"
                         />
                         <span v-else class="text-xs text-400">-</span>
@@ -238,13 +306,18 @@ import Tag from 'primevue/tag';
 import Dialog from 'primevue/dialog';
 import IconField from 'primevue/iconfield';
 import InputIcon from 'primevue/inputicon';
+import ToggleSwitch from 'primevue/toggleswitch';
 
 const props = defineProps({
     logs: Object,
     filters: Object,
+    counts: Object,
     availableRoles: Array,
     availableActions: Array,
 });
+
+const currentCategory = ref(props.filters.category || null);
+const hideStudentLogins = ref(props.filters.hide_student_logins === 'true' || props.filters.hide_student_logins === true);
 
 const filterForm = ref({
     search: props.filters.search || '',
@@ -252,7 +325,25 @@ const filterForm = ref({
     action: props.filters.action || null,
     date_from: props.filters.date_from || '',
     date_to: props.filters.date_to || '',
+    category: props.filters.category || null,
+    hide_student_logins: hideStudentLogins.value ? 'true' : 'false',
 });
+
+const selectCategory = (cat) => {
+    currentCategory.value = cat;
+    filterForm.value.category = cat;
+    applyFilter();
+};
+
+const toggleHideStudentLogins = () => {
+    filterForm.value.hide_student_logins = hideStudentLogins.value ? 'true' : 'false';
+    applyFilter();
+};
+
+const toggleHideStudentLoginsDirectly = () => {
+    hideStudentLogins.value = !hideStudentLogins.value;
+    toggleHideStudentLogins();
+};
 
 const roleOptions = computed(() => {
     const list = [
@@ -270,25 +361,33 @@ const roleOptions = computed(() => {
 const actionOptions = computed(() => {
     const list = [{ label: 'Semua Aksi', value: null }];
     (props.availableActions || []).forEach(act => {
-        list.push({ label: act, value: act });
+        list.push({ label: formatActionLabel(act), value: act });
     });
     return list;
 });
 
 const applyFilter = () => {
-    router.get(route('admin.activity-logs.index'), filterForm.value, {
+    router.get(route('admin.activity-logs.index'), {
+        ...filterForm.value,
+        category: currentCategory.value,
+        hide_student_logins: hideStudentLogins.value ? 'true' : 'false',
+    }, {
         preserveState: true,
         preserveScroll: true,
     });
 };
 
 const resetFilter = () => {
+    currentCategory.value = null;
+    hideStudentLogins.value = true;
     filterForm.value = {
         search: '',
         role: null,
         action: null,
         date_from: '',
         date_to: '',
+        category: null,
+        hide_student_logins: 'true',
     };
     applyFilter();
 };
@@ -329,14 +428,20 @@ const getRoleSeverity = (role) => {
     return 'secondary';
 };
 
+const formatActionLabel = (action) => {
+    if (!action) return '-';
+    return action.replace(/_/g, ' ');
+};
+
 const getActionSeverity = (action) => {
     if (!action) return 'primary';
     const a = action.toUpperCase();
-    if (a.includes('FAIL') || a === 'DELETED') return 'danger';
-    if (a === 'LOGIN' || a === 'CREATED') return 'success';
-    if (a === 'UPDATED') return 'info';
+    if (a.includes('DELETE') || a.includes('FAIL') || a.includes('RESET') || a.includes('DISABLE')) return 'danger';
+    if (a.includes('CREATE') || a.includes('IMPORT') || a.includes('START') || a.includes('ENABLE') || a === 'LOGIN') return 'success';
+    if (a.includes('UPDATE') || a.includes('GRADE') || a.includes('TOGGLE')) return 'warn';
+    if (a.includes('PROCTOR') || a.includes('CBT') || a.includes('TOKEN') || a.includes('REOPEN') || a.includes('REENTER')) return 'help';
     if (a === 'LOGOUT') return 'secondary';
-    return 'warn';
+    return 'info';
 };
 
 const cleanModelName = (str) => {
@@ -345,3 +450,4 @@ const cleanModelName = (str) => {
     return parts[parts.length - 1];
 };
 </script>
+

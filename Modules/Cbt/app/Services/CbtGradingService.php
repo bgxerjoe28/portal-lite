@@ -18,6 +18,11 @@ class CbtGradingService
         $questions = $studentExam->exam->bank->questions;
         $studentAnswers = CbtStudentAnswer::where('cbt_student_exam_id', $studentExamId)->get()->keyBy('cbt_question_id');
 
+        // Jika tidak ada rekaman jawaban sama sekali di database (misal ujian diinput nilai langsung), pertahankan skor yang ada
+        if ($studentAnswers->isEmpty() && !is_null($studentExam->score)) {
+            return (float)$studentExam->score;
+        }
+
         $totalMaxScore = 0;
         $totalPointsEarned = 0;
 
@@ -107,9 +112,51 @@ class CbtGradingService
                     break;
 
                 case 'uraian':
-                    // Uraian tidak bisa dinilai otomatis, nilainya 0 dulu sampai dinilai manual
-                    $isCorrect = null;
-                    $pointsEarned = (float)($studentAnswer->points_earned ?? 0.00);
+                    // Cek apakah kunci $correct adalah asosiatif (soal berkolom / dynamic radio / multi-sub item)
+                    $isAssoc = false;
+                    if (is_array($correct) && !empty($correct)) {
+                        $keys = array_keys($correct);
+                        if ($keys !== range(0, count($correct) - 1)) {
+                            $isAssoc = true;
+                        }
+                    }
+
+                    if ($isAssoc) {
+                        $totalItems = count($correct);
+                        $correctCount = 0;
+                        $selArr = is_array($selected) ? $selected : [];
+
+                        foreach ($correct as $subId => $corrVal) {
+                            $studentVal = strtoupper(trim((string)($selArr[$subId] ?? '')));
+                            if (is_array($corrVal)) {
+                                $corrList = array_map(fn($x) => strtoupper(trim((string)$x)), $corrVal);
+                                if ($studentVal !== '' && in_array($studentVal, $corrList)) {
+                                    $correctCount++;
+                                }
+                            } else {
+                                $targetVal = strtoupper(trim((string)$corrVal));
+                                if ($targetVal !== '' && $studentVal === $targetVal) {
+                                    $correctCount++;
+                                }
+                            }
+                        }
+
+                        if ($totalItems > 0 && $correctCount > 0) {
+                            $pointsEarned = ($correctCount / $totalItems) * $maxScore;
+                            $isCorrect = ($correctCount === $totalItems);
+                        } elseif (isset($studentAnswer->points_earned) && (float)$studentAnswer->points_earned > 0) {
+                            // Pertahankan nilai jika sudah dinilai manual oleh guru
+                            $pointsEarned = (float)$studentAnswer->points_earned;
+                            $isCorrect = ($pointsEarned >= $maxScore);
+                        } else {
+                            $pointsEarned = 0.00;
+                            $isCorrect = false;
+                        }
+                    } else {
+                        // Uraian manual murni, dinilai manual oleh guru
+                        $isCorrect = null;
+                        $pointsEarned = (float)($studentAnswer->points_earned ?? 0.00);
+                    }
                     break;
 
                 case 'list':

@@ -24,6 +24,7 @@ class CbtExam extends Model
         'must_complete_all',
         'is_independent',
         'is_active',
+        'notes',
         'grading_component_id',
         'grading_item_id',
     ];

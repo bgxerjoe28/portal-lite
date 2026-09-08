@@ -1,5 +1,74 @@
 # Changelog
 
+## [2.16.13] - 2026-09-08
+### Added
+- **Fitur Penjadwalan Ujian Massal / Terpusat (Batch Schedule Generator) (`/cbt/exams`)**:
+  - **Generator Multi-Baris Cepat**: Memungkinkan admin dan panitia CBT menjadwalkan puluhan mata pelajaran ujian serentak (PTS, PAS, SAS, USBK) dalam 1 antarmuka tabel spreadsheet interaktif tanpa harus mengklik tombol tambah dan mengisi form satu per satu berulang-ulang.
+  - **Integrasi Master Waktu Sesi Ujian (`/cbt/sessions`)**: Jam mulai, jam selesai, dan durasi menit dapat ditarik langsung dari master sesi ujian (*UTS Sesi 1*, *UTS Sesi 2*, *UTS Sesi 3*, dsb.) baik pada setiap baris tabel jadwal massal maupun pada modal form jadwal ujian reguler, dilengkapi shortcut pintar *"⚡ Urutkan Sesi 1, 2, 3..."* yang otomatis membagi sesi harian secara berurutan.
+  - **Filter Cerdas Bank Soal Berdasarkan Nama Event**: Memfilter opsi pilihan Bank Soal secara instan sesuai isian *"Nama Kegiatan / Event"* (misal: `PTS_Gasal_26_27`), memastikan hanya bank soal buatan guru yang berawalan kode event tersebut (contoh: `PTS_Gasal_26_27_Koding KA X`) yang ditampilkan di dropdown, lengkap dengan switch toggle ON/OFF dan indikator badge jumlah bank yang cocok.
+  - **Shortcut 1-Klik Pilihan Rombel Tingkat**: Tersedia tombol shortcut cerdas `+ Semua Kelas X (6 Rombel)`, `+ Semua Kelas XI (6 Rombel)`, `+ Semua Kelas XII (6 Rombel)`, dan `+ Semua 18 Rombel` dengan satu klik "Terapkan Rombel ke Seluruh Baris Jadwal" untuk mendistribusikan rombel secara instan.
+  - **Filter Rombel Tahun Ajaran Aktif**: Membatasi opsi pilihan rombel hanya pada tahun ajaran aktif berjalan (18 rombel: X 1–6, XI 1–6, XII 1–6) sehingga tidak terjadi duplikasi dengan rombel dari tahun ajaran lampau.
+  - **Otomatisasi Judul Ujian Terstruktur**: Mengisi nama ujian otomatis langsung dari nama Bank Soal yang sudah rapi berawalan kode event, atau dari format `[Event]_[Nama Mapel]`.
+  - **Kalkulasi Otomatis Jam Selesai**: Mengkalkulasi jam selesai secara real-time (`Jam Selesai = Jam Mulai + Durasi`) setiap kali jam mulai atau durasi diubah, serta tombol "Terapkan Semua" untuk menyelaraskan tanggal, sesi, dan durasi ke semua baris sekaligus.
+  - **Tindakan Cepat per Baris (Duplikasi & Hapus)**: Menyediakan tombol duplikasi baris jadwal (`pi-copy`) untuk mempercepat input sesi ujian berikutnya serta tombol hapus baris dinamis.
+  - **Kolom Waktu & Durasi Collapsible**: Kolom waktu pada tabel jadwal ujian kini dapat diringkas (*collapsed*) menampilkan format tanggal dan rentang jam ringkas (contoh: *8 Sep 2026 • 07:00 - 08:30 WIB*) beserta durasi untuk menghemat ruang vertikal tabel, dan dapat diklik untuk membuka (*expand*) rincian jam mulai & selesai per baris, dilengkapi tombol aksi di header kolom untuk meringkas atau membuka seluruh baris sekaligus.
+  - **Endpoint Batch & Transaksi Database Aman (`POST /cbt/exams/batch`)**: Method `batchStore` di `CbtExamController` yang dibungkus dalam `DB::transaction()` untuk memvalidasi seluruh baris, menyinkronkan relasi pivot kelas rombel (`classrooms()->sync()`), mengaitkan ID guru pemilik bank soal / panitia CBT, serta mencatat riwayat audit log `CBT_EXAM_BATCH_CREATE` secara menyeluruh.
+
+## [2.16.12] - 2026-09-08
+### Added
+- **Fitur Muat Ulang Soal In-App Ujian CBT Siswa (`ExamSession.vue`)**:
+  - **Tombol "Muat Ulang Soal" di Header Ujian**: Menambahkan tombol aksi baru di samping tombol "Peta Soal" pada antarmuka pengerjaan ujian siswa dengan penyesuaian responsif (`.mobile-hide` menyembunyikan label teks di perangkat mobile) dan tooltip.
+  - **Inertia Partial Reload (`router.reload({ only: ['questions'] })`)**: Mengambil data butir soal dan opsi jawaban terbaru langsung dari server secara asinkron tanpa memuat ulang asset script/css atau me-reload halaman browser secara penuh.
+  - **Proteksi Fullscreen & Zero Anti-Cheat False-Positive**: Mengatasi risiko terlepasnya mode Fullscreen dan terpicunya deteksi kecurangan (`reportCheatWarning` / suspensi kunci layar 1–5 menit) yang terjadi jika siswa melakukan reload manual browser (F5).
+  - **Sinkronisasi Input & Proteksi Jawaban yang Sedang Diketik**: Secara otomatis mengamankan isian siswa pada soal `isian_singkat` dan `uraian` yang belum di-blur sebelum reload dieksekusi, serta memicu `syncLocalInputs()` pasca-reload agar tampilan input teks, radio, checkbox, dan penjodohan langsung tersinkronisasi.
+  - **Proteksi Siklus Hidup & Anti-Spam (Lifecycle `onFinish`)**: Tombol dinonaktifkan dengan animasi loading (`pi-spin`) saat proses request berlangsung dan state loading dijamin di-reset melalui callback `onFinish`.
+  - **Konsistensi Urutan Soal pada Mode Simulasi Guru (`CbtExamController.php`)**: Menyimpan urutan nomor soal dan opsi acak ke dalam session guru (`cbt_dry_run_order_{id}`) sehingga ketika guru menguji coba tombol "Muat Ulang Soal" pada mode simulasi CBT (*dry run*), urutan soal dan opsi tetap terkunci konsisten dan tidak teracak ulang.
+  - **Hyperlink Bank Soal pada Daftar Jadwal Ujian (`/cbt/exams`)**: Mengubah teks nama Bank Soal pada tabel jadwal ujian menjadi tautan langsung interaktif (`route('cbt.bank.questions', ...)`) lengkap dengan ikon eksternal dan tooltip sehingga guru/admin dapat langsung membuka dan mengelola butir soal terkait.
+
+## [2.16.11] - 2026-09-03
+### Added
+- **Fitur Edit Teks Soal Individual Tanpa Hapus Bank Soal (`/cbt/bank/{id}/questions`)**:
+  - **Tombol "Edit Soal" per Butir Soal**: Menambahkan tombol aksi baru di setiap card soal pada halaman Detail Soal Bank Soal yang memungkinkan guru/admin mengedit teks soal dan teks pilihan jawaban secara langsung tanpa menghapus atau meng-import ulang seluruh bank soal.
+  - **Modal Edit Teks Soal Interaktif (WYSIWYG Tiptap Editor)**: Mengintegrasikan `RichTextEditor` berbasis Tiptap dengan formatting lengkap (Bold, Italic, Underline, Strikethrough, Heading, List, Text Align, Text Color, dan Upload Gambar) menggantikan textarea biasa sehingga guru tidak perlu berhadapan langsung dengan raw HTML.
+  - **Penyuntingan Pilihan Jawaban yang Aman (*Safe Strip & Auto-Rewrap*)**: Teks pilihan jawaban otomatis dibersihkan dari tag HTML saat form dibuka sehingga nyaman disunting, lalu otomatis dibungkus kembali dengan tag `<p class="mb-2">` saat disimpan agar tampilan konsisten dengan format hasil impor Word di antarmuka ujian siswa.
+  - **Endpoint Upload Gambar CBT (`POST /cbt/questions/upload-image`)**: Menambahkan endpoint unggah gambar pada `CbtImageController` dengan hak akses admin dan guru (`role_or_permission:admin|guru|manage-cbt|access-cbt`), penyimpanan dual-layer (MinIO S3 dan lokal fallback), serta URL stream proxy aman (`cbt.questions.image`) untuk mencegah status *403 Forbidden*.
+  - **Endpoint Patch Soal (`PUT /cbt/bank/{bank_id}/questions/{question_id}/patch`)**: Method `patchQuestion` baru di `CbtBankController` dengan otorisasi kepemilikan bank soal, validasi input, dan pencatatan audit log `CBT_QUESTION_PATCH`.
+- **Sistem Peringatan Ujian Aktif saat Modifikasi Bank Soal**:
+  - **Banner Peringatan Oranye di Halaman Detail Soal**: Jika bank soal sedang digunakan oleh ujian yang aktif (dalam jendela waktu `start_time`–`end_time` dan `is_active = true`), halaman `/cbt/bank/{id}/questions` otomatis menampilkan banner peringatan oranye beserta daftar nama ujian yang sedang berlangsung.
+  - **Peringatan dalam Modal Edit Soal**: Modal "Edit Soal" menampilkan banner peringatan tambahan saat ada ujian aktif, mengingatkan bahwa perubahan akan langsung terlihat oleh siswa yang sedang mengerjakan ujian.
+  - **Blokir Otomatis "Kosongkan Soal"**: Method `clearQuestions` menolak penghapusan soal jika bank sedang digunakan ujian aktif dan mengembalikan pesan error dengan daftar nama ujian terkait.
+  - **Konfirmasi Bertingkat saat Import Soal (Ujian Aktif)**: Method `importExcel` mengembalikan HTTP 409 dengan daftar ujian aktif jika bank sedang digunakan. Frontend `Index.vue` menampilkan dialog konfirmasi eksplisit berisi daftar ujian yang terancam dan meminta guru menekan "Ya, Tetap Import" sebelum proses import dijalankan ulang dengan parameter `force_import=1`.
+  - **Prop `activeExams` pada `Questions.vue`**: Controller `questions()` kini menyertakan data ujian aktif sebagai prop Inertia sehingga tampilan halaman selalu sinkron dengan status real-time bank soal.
+
+## [2.16.10] - 2026-09-03
+### Added
+- **Dokumen Cetak PDF Berita Acara & Rekap Pelaksanaan Ujian CBT (`/cbt/exams/{id}/export-berita-acara-pdf`)**:
+  - **Format Berita Acara Resmi**: Menghasilkan dokumen cetak resmi Berita Acara Pelaksanaan Ujian CBT ber-Kop Surat sekolah, identitas mata pelajaran, rombel kelas, alokasi waktu/durasi, dan guru pengampu.
+  - **Rekapitulasi Kehadiran Siswa**: Tabel statistik jumlah peserta terdaftar, hadir (mengerjakan/selesai), tidak hadir/belum mulai, persentase kehadiran, serta rincian daftar siswa tidak hadir.
+  - **Catatan Penyelenggaraan Dinamis**: Guru/proktor dapat menambahkan atau mengedit catatan kejadian/kondisi khusus pelaksanaan ujian melalui modal dialog interaktif di halaman Hasil Ujian (`Results.vue`) yang otomatis tersimpan permanen di database (`cbt_exams.notes`) dan tercetak pada dokumen PDF.
+  - **Lampiran Daftar Hadir & Status Pengerjaan (Page Break)**: Halaman lampiran kedua memuat tabel presensi seluruh siswa per rombel beserta jam masuk, jam selesai, skor nilai, dan kolom paraf siswa.
+  - **Menu Ekspor Hasil Ujian**: Menambahkan opsi "Cetak Berita Acara & Rekap Pelaksanaan" pada dropdown tombol cetak halaman Hasil Ujian (`/cbt/exams/{id}/results`).
+
+## [2.16.9] - 2026-09-03
+### Fixed
+- **Perbaikan Mesin Penilaian CBT Soal Berkolom / Radio Dinamis (`CbtGradingService.php`)**:
+  - **Auto-Grading Uraian Array Asosiatif**: Memperbaiki `case 'uraian'` pada `CbtGradingService` agar otomatis menilai secara proporsional dan akurat jika `correct_answer` berupa array asosiatif (misalnya soal pilihan ganda berkolom atau tabel radio interaktif `.cbt-dynamic-radio`).
+  - **Proteksi Nilai Manual & Ujian Tanpa Rekaman Jawaban**: Mempertahankan nilai koreksi manual guru untuk esai teks bebas murni dan menambahkan *safety guard* agar penilaian ulang (*regrade*) tidak menimpa nilai ujian yang tidak memiliki rekaman rincian lembar jawaban di database.
+  - **Perbaikan Regex Parser Word (`WordQuestionParser.php`)**: Memperluas deteksi regex opsi radio dinamis (`[opsi no=... pg=[A-Z]]`) agar seluruh opsi (termasuk B dan S pada tabel Benar/Salah) teridentifikasi secara konsisten.
+
+## [2.16.7] - 2026-09-01
+### Added
+- **Simulasi / Dry Run Ujian CBT Guru (`/cbt/exams/{id}/dry-run`)**:
+  - Guru dapat menguji coba tampilan dan mekanisme pengerjaan riil ujian CBT sesuai aturan waktu, acak butir soal, dan antarmuka siswa tanpa mencatat hasil ujian ke database.
+  - Dilengkapi banner mode simulasi, simulasi peringatan anti-cheat, dan evaluasi kalkulasi skor instan di sisi klien pada modal hasil ujian.
+- **Penyempurnaan & Ekspansi Log Aktivitas & Audit Trail Admin (`/admin/activity-logs`)**:
+  - **Pencatatan Audit Trail Operasional CBT Komprehensif**:
+    - *Modul CBT*: Sesi Ujian (`CBT_SESSION_CREATE`, `UPDATE`, `DELETE`), Jadwal Pengawas & Sesi Ekstra Ruangan (`CBT_PROCTOR_SCHEDULE_CREATE`, `UPDATE`, `DELETE`), Jadwal Ujian (`CBT_EXAM_CREATE`, `UPDATE`, `DELETE`, `TOGGLE_ACTIVE`, `TOGGLE_INDEPENDENT`), Bank Soal & Butir Soal (`CBT_BANK_CREATE`, `UPDATE`, `DELETE`, `IMPORT`, `CLEAR`), Ruang Ujian (`CBT_ROOM_...`).
+    - *Modul Manajemen Pengguna*: Buat user (`USER_CREATE`), edit user (`USER_UPDATE`), toggle status aktif (`USER_TOGGLE_STATUS`), enable/disable massal (`USER_BATCH_...`), reset password (`USER_RESET_PASSWORD`).
+  - **Antarmuka UI & Filter Kategori Cepat**:
+    - Tab filter cepat: *Semua Log*, *CBT & Sesi Ujian*, *Penugasan & Nilai*, *Akademik & User*, dan *Autentikasi & Login*.
+    - Toggle *Switch* **"Sembunyikan Login Siswa"** (default aktif) untuk memfilter ribuan log login siswa harian agar riwayat aksi manajerial guru/admin tidak tenggelam.
+
 ## [2.16.4] - 2026-08-27
 ### Fixed
 - **Pencegahan Duplikasi Jawaban Siswa & Penanganan Race Condition CBT (`cbt_student_answers`)**:

@@ -27,9 +27,46 @@ Aplikasi Computer Based Test (CBT) dan Manajemen Penugasan Sekolah berbasis Lara
 
 ## Versi Saat Ini
 
-- **Version**: 2.16.4
+- **Version**: 2.16.13
 - **Channel**: Stable
-- **Released**: 2026-08-27
+- **Released**: 2026-09-08
+
+### Sorotan Pembaruan (v2.16.13)
+- **Fitur Penjadwalan Ujian Massal / Terpusat (Batch Schedule Generator) (`/cbt/exams`)**:
+  - Generator multi-baris spreadsheet untuk menjadwalkan puluhan mata pelajaran ujian serentak (PTS, PAS, SAS, dsb.) dalam 1 halaman interaktif.
+  - Integrasi master waktu sesi ujian (`/cbt/sessions`) dengan tombol pintar *"⚡ Urutkan Sesi 1, 2, 3..."*.
+  - Filter cerdas Bank Soal berdasarkan prefix nama kegiatan/event (misal `PTS_Gasal_26_27`) dengan switch toggle dan indikator badge jumlah.
+  - Shortcut 1-klik pilihan rombel kelas (X, XI, XII, 18 rombel) terfilter tahun ajaran aktif.
+  - Kolom Waktu & Durasi collapsible (tampilan ringkas vs rincian jam mulai & selesai per baris).
+  - Backend `batchStore` (`POST /cbt/exams/batch`) dengan DB transaction dan audit trail log.
+
+### Sorotan Pembaruan (v2.16.12)
+- **Fitur Muat Ulang Soal In-App Ujian CBT Siswa (`ExamSession.vue`)**:
+  - Tombol *"Muat Ulang Soal"* di header ujian siswa dengan partial reload Inertia (`router.reload({ only: ['questions'] })`) tanpa reload browser manual (fullscreen terjaga & nol false-positive anti-cheat).
+  - Konsistensi urutan acak soal & opsi saat simulasi guru (`cbt_dry_run_order_{id}`).
+  - Hyperlink langsung Bank Soal pada tabel jadwal ujian (`/cbt/exams`).
+
+### Sorotan Pembaruan (v2.16.11)
+- **Fitur Edit Teks Soal Individual & Sistem Proteksi Ujian Aktif (`/cbt/bank/{id}/questions`)**:
+  - Modal edit teks soal interaktif dengan RichTextEditor (Tiptap) dan upload gambar (`POST /cbt/questions/upload-image`).
+  - Endpoint patch soal individual (`PUT /cbt/bank/{bank_id}/questions/{question_id}/patch`).
+  - Banner peringatan oranye, pencegahan kosongkan soal, dan konfirmasi bertingkat saat import ulang bank soal yang sedang dipakai ujian aktif.
+
+### Sorotan Pembaruan (v2.16.10)
+- **Dokumen Cetak PDF Berita Acara & Rekap Pelaksanaan Ujian CBT (`/cbt/exams/{id}/export-berita-acara-pdf`)**:
+  - Cetak dokumen resmi Berita Acara Pelaksanaan Ujian CBT ber-Kop Surat sekolah format A4 Portrait.
+  - Catatan kejadian/kondisi pelaksanaan ujian dinamis yang dapat diedit langsung dari halaman Hasil Ujian (`Results.vue`).
+
+### Sorotan Pembaruan (v2.16.9)
+- **Perbaikan Mesin Penilaian & Regex Word Parser CBT**:
+  - Penilaian otomatis soal berkolom / radio dinamis (`.cbt-dynamic-radio`) dengan kunci array asosiatif.
+  - Proteksi nilai manual & safety guard ujian tanpa lembar jawaban.
+
+### Sorotan Pembaruan (v2.16.7)
+- **Simulasi / Dry Run Ujian CBT Guru (`/cbt/exams/{id}/dry-run`)**:
+  - Guru dapat menguji coba simulasi riil ujian siswa lengkap dengan banner simulasi dan evaluasi skor instan di browser.
+- **Audit Trail & Log Aktivitas CBT**:
+  - Pencatatan log aktivitas lengkap untuk seluruh operasi CBT dan filter kategori cepat di menu Log Aktivitas.
 
 ### Sorotan Pembaruan (v2.16.4)
 - **Integritas Jawaban Siswa CBT & Penanganan Race Condition (`cbt_student_answers`)**:

@@ -465,13 +465,55 @@
                     </DataTable>
                 </div>
             </div>
+
+            <!-- Modal Dialog Berita Acara & Catatan Penyelenggaraan -->
+            <Dialog 
+                v-model:visible="showBeritaAcaraDialog" 
+                modal 
+                header="Cetak Berita Acara & Rekap Pelaksanaan CBT" 
+                :style="{ width: '560px' }"
+            >
+                <div class="flex flex-column gap-3 pt-2">
+                    <p class="text-600 text-sm m-0 line-height-3">
+                        Anda dapat menyesuaikan <b>Catatan Kejadian / Penyelenggaraan Ujian</b> di bawah ini. Catatan akan otomatis tersimpan dan tercetak pada dokumen resmi Berita Acara Pelaksanaan.
+                    </p>
+                    <div class="flex flex-column gap-2">
+                        <label for="execution_notes" class="font-bold text-sm text-900">Catatan Kejadian / Kondisi Pelaksanaan:</label>
+                        <Textarea 
+                            id="execution_notes" 
+                            v-model="notesForm.notes" 
+                            rows="4" 
+                            class="w-full" 
+                            placeholder="Contoh: Ujian Computer Based Test (CBT) telah dilaksanakan secara tertib, lancar, dan sesuai dengan petunjuk teknis pelaksanaan asesmen sekolah..."
+                        />
+                    </div>
+                </div>
+                <template #footer>
+                    <Button label="Batal" icon="pi pi-times" severity="secondary" text @click="showBeritaAcaraDialog = false" />
+                    <Button 
+                        label="Simpan Catatan" 
+                        icon="pi pi-save" 
+                        severity="info" 
+                        outlined
+                        :loading="notesForm.processing" 
+                        @click="saveNotesOnly" 
+                    />
+                    <Button 
+                        label="Simpan & Cetak PDF" 
+                        icon="pi pi-print" 
+                        severity="primary" 
+                        :loading="notesForm.processing" 
+                        @click="saveAndPrintBeritaAcara" 
+                    />
+                </template>
+            </Dialog>
         </div>
     </AppLayout>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue';
-import { Link, router } from '@inertiajs/vue3';
+import { Link, router, useForm } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 
@@ -481,6 +523,8 @@ import Column from 'primevue/column';
 import Button from 'primevue/button';
 import SplitButton from 'primevue/splitbutton';
 import Tag from 'primevue/tag';
+import Dialog from 'primevue/dialog';
+import Textarea from 'primevue/textarea';
 
 const props = defineProps({
     exam: Object,
@@ -510,6 +554,37 @@ const confirm = useConfirm();
 const toast = useToast();
 const isRecalculating = ref(false);
 const activeTab = ref('students');
+const showBeritaAcaraDialog = ref(false);
+
+const defaultNotes = 'Ujian Computer Based Test (CBT) telah dilaksanakan secara tertib, lancar, dan sesuai dengan petunjuk teknis pelaksanaan asesmen sekolah.';
+
+const notesForm = useForm({
+    notes: props.exam.notes || defaultNotes,
+});
+
+const openBeritaAcaraModal = () => {
+    notesForm.notes = props.exam.notes || defaultNotes;
+    showBeritaAcaraDialog.value = true;
+};
+
+const saveNotesOnly = () => {
+    notesForm.post(route('cbt.exams.update_notes', props.exam.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            showBeritaAcaraDialog.value = false;
+        }
+    });
+};
+
+const saveAndPrintBeritaAcara = () => {
+    notesForm.post(route('cbt.exams.update_notes', props.exam.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            showBeritaAcaraDialog.value = false;
+            window.open(route('cbt.exams.export_berita_acara_pdf', props.exam.id), '_blank');
+        }
+    });
+};
 
 const hasKickedStudents = computed(() => 
     props.results.some(r => r.status === 'logged_out')
@@ -545,6 +620,20 @@ const exportMenuItems = [
         separator: true
     },
     {
+        label: 'Cetak Berita Acara & Rekap Pelaksanaan',
+        icon: 'pi pi-file',
+        command: () => {
+            openBeritaAcaraModal();
+        }
+    },
+    {
+        label: 'Cetak Daftar Nilai Siswa',
+        icon: 'pi pi-list',
+        command: () => {
+            window.open(route('cbt.exams.export_daftar_nilai_pdf', props.exam.id), '_blank');
+        }
+    },
+    {
         label: 'Cetak Laporan Jawaban Siswa',
         icon: 'pi pi-file-pdf',
         command: () => {
@@ -556,13 +645,6 @@ const exportMenuItems = [
         icon: 'pi pi-table',
         command: () => {
             window.open(route('cbt.exams.export_dichotomous_pdf', props.exam.id), '_blank');
-        }
-    },
-    {
-        label: 'Cetak Daftar Nilai Siswa',
-        icon: 'pi pi-list',
-        command: () => {
-            window.open(route('cbt.exams.export_daftar_nilai_pdf', props.exam.id), '_blank');
         }
     }
 ];

@@ -150,6 +150,8 @@ const props = defineProps({
     modelValue: { type: String, default: '' },
     placeholder: { type: String, default: 'Tuliskan teks soal di sini...' },
     hasError: { type: Boolean, default: false },
+    uploadUrl: { type: String, default: '' },
+    extraUploadData: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -202,8 +204,30 @@ const handleImageUpload = async (event) => {
     try {
         const formData = new FormData();
         formData.append('image', file);
+        if (props.extraUploadData && typeof props.extraUploadData === 'object') {
+            Object.entries(props.extraUploadData).forEach(([k, v]) => {
+                if (v !== undefined && v !== null) {
+                    formData.append(k, v);
+                }
+            });
+        }
 
-        const response = await axios.post(route('guru.assignments.upload_image'), formData, {
+        let uploadEndpoint = props.uploadUrl;
+        if (!uploadEndpoint) {
+            try {
+                if (typeof route === 'function' && route().has('guru.assignments.upload_image')) {
+                    uploadEndpoint = route('guru.assignments.upload_image');
+                }
+            } catch (e) {
+                // Ignore route lookup error
+            }
+        }
+
+        if (!uploadEndpoint) {
+            throw new Error('Rute upload gambar belum dikonfigurasi untuk editor ini.');
+        }
+
+        const response = await axios.post(uploadEndpoint, formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
                 'Accept': 'application/json'
@@ -214,7 +238,9 @@ const handleImageUpload = async (event) => {
         editor.value.chain().focus().setImage({ src: data.url, alt: file.name }).run();
     } catch (err) {
         let errorMessage = 'Gagal mengupload gambar. ';
-        if (err.response && err.response.status === 422) {
+        if (err.response && err.response.status === 403) {
+            errorMessage += 'Akses ditolak (403). Anda tidak memiliki izin mengunggah gambar di modul ini.';
+        } else if (err.response && err.response.status === 422) {
             const errors = err.response.data.errors;
             if (errors && errors.image) {
                 errorMessage += errors.image[0];
@@ -224,7 +250,7 @@ const handleImageUpload = async (event) => {
         } else if (err.response && err.response.status === 413) {
             errorMessage += 'File gambar terlalu besar melebihi batas server.';
         } else {
-            errorMessage += err.message || 'Unknown error';
+            errorMessage += err.response?.data?.message || err.message || 'Unknown error';
         }
         alert(errorMessage);
         console.error('Image upload error:', err);
